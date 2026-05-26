@@ -526,59 +526,78 @@ async function gerarPlanoCorte() {
   showLoading(true);
 
   const { data: itens, error } = await sb.from('laje_itens_orcamento')
-    .select('tamanho_vigota, qtd_vigotas').eq('id_orcamento', idOrc);
+    .select('tamanho_vigota, qtd_vigotas, altura').eq('id_orcamento', idOrc);
   if (error || !itens?.length) {
     showLoading(false);
     return showToast('Nenhuma vigota encontrada.', true);
   }
 
-  const tamanhos = [];
-  for (const item of itens) {
-    for (let i = 0; i < Number(item.qtd_vigotas); i++) {
-      tamanhos.push(Number(item.tamanho_vigota));
+  // Agrupa vigotas por altura
+  const grupos = {};
+  itens.forEach(i => {
+    const altura = i.altura || 8;
+    if (!grupos[altura]) grupos[altura] = [];
+    for (let j = 0; j < Number(i.qtd_vigotas); j++) {
+      grupos[altura].push(Number(i.tamanho_vigota));
     }
-  }
+  });
 
   const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
-  let barras;
-  if (LAJE.algoritmoCorte === 'BFD') {
-    barras = binPackingBFD(tamanhos, barra12m);
-  } else if (LAJE.algoritmoCorte === 'RBF') {
-    barras = binPackingRBF(tamanhos, barra12m, 100);
-  } else if (LAJE.algoritmoCorte === 'DP') {
-    barras = binPackingDP(tamanhos, barra12m);
-  } else {
-    barras = binPackingFFD(tamanhos, barra12m);
+  let htmlResultado = '';
+
+  for (const [altura, tamanhos] of Object.entries(grupos).sort((a,b) => b[0]-a[0])) {
+    let barras;
+    if (LAJE.algoritmoCorte === 'BFD') {
+      barras = binPackingBFD(tamanhos, barra12m);
+    } else if (LAJE.algoritmoCorte === 'RBF') {
+      barras = binPackingRBF(tamanhos, barra12m, 100);
+    } else if (LAJE.algoritmoCorte === 'DP') {
+      barras = binPackingDP(tamanhos, barra12m);
+    } else {
+      barras = binPackingFFD(tamanhos, barra12m);
+    }
+
+    let totalSobra = 0;
+    const linhas = barras.map((b, i) => {
+      totalSobra += b.sobra;
+      const aproveitamento = ((b.usado / barra12m) * 100).toFixed(1);
+      let statusHtml = '';
+      if (b.sobra < 0.30) statusHtml = '<span class="text-green-600 font-bold">🟢 Ótimo</span>';
+      else if (b.sobra < 0.80) statusHtml = '<span class="text-amber-600 font-bold">🟡 Atenção</span>';
+      else statusHtml = '<span class="text-red-600 font-bold">🔴 Desperdício</span>';
+      return `<tr class="border-b">
+        <td class="p-3 font-bold">Barra ${i+1}</td>
+        <td class="p-3 font-mono">${b.cortes.map(c => c.toFixed(2)+'m').join(' + ')}</td>
+        <td class="p-3">${b.sobra.toFixed(2)} m</td>
+        <td class="p-3">${aproveitamento}%</td>
+        <td class="p-3">${statusHtml}</td>
+      </tr>`;
+    }).join('');
+
+    htmlResultado += `
+      <div class="mb-8">
+        <h3 class="font-bold text-lg text-slate-800 mb-2">🔹 Treliça TG${altura} – ${tamanhos.length} peças</h3>
+        <div class="overflow-x-auto bg-white rounded-xl border shadow-sm">
+          <table class="w-full text-sm text-left">
+            <thead class="bg-slate-50 text-slate-600">
+              <tr>
+                <th class="p-3">Barra</th>
+                <th class="p-3">Cortes (sequência)</th>
+                <th class="p-3">Sobra</th>
+                <th class="p-3">Aproveitamento</th>
+                <th class="p-3">Status</th>
+              </tr>
+            </thead>
+            <tbody>${linhas}</tbody>
+          </table>
+        </div>
+        <p class="text-sm text-slate-500 mt-2">Total: ${barras.length} barra(s) de 12,00 m | Sobra acumulada: ${totalSobra.toFixed(2)} m (${((totalSobra/(barras.length*12))*100).toFixed(1)}% de perda)</p>
+      </div>
+    `;
   }
-  LAJE.planoCorteCache = { barras, idOrc };
 
   document.getElementById('laje-corte-resultado').classList.remove('hidden');
-  const tbody = document.getElementById('laje-corte-tbody');
-  let totalSobra = 0;
-
-  tbody.innerHTML = barras.map((b, i) => {
-    totalSobra += b.sobra;
-    const aproveitamento = ((b.usado / barra12m) * 100).toFixed(1);
-    let statusHtml = '';
-    if (b.sobra < 0.30) statusHtml = '<span class="text-green-600 font-bold">🟢 Ótimo</span>';
-    else if (b.sobra < 0.80) statusHtml = '<span class="text-amber-600 font-bold">🟡 Atenção</span>';
-    else statusHtml = '<span class="text-red-600 font-bold">🔴 Desperdício</span>';
-    return `<tr class="border-b">
-      <td class="p-3 font-bold">Barra ${i+1}</td>
-      <td class="p-3 font-mono">${b.cortes.map(c => c.toFixed(2)+'m').join(' + ')}</td>
-      <td class="p-3">${b.sobra.toFixed(2)} m</td>
-      <td class="p-3">${aproveitamento}%</td>
-      <td class="p-3">${statusHtml}</td>
-    </tr>`;
-  }).join('');
-
-  tbody.insertAdjacentHTML('beforeend', `
-    <tr class="bg-slate-50 font-bold">
-      <td colspan="5" class="p-3 text-center">
-        Total: ${barras.length} barra(s) de 12,00 m | Sobra acumulada: ${totalSobra.toFixed(2)} m (${((totalSobra/(barras.length*12))*100).toFixed(1)}% de perda)
-      </td>
-    </tr>
-  `);
+  document.getElementById('laje-corte-tbody').innerHTML = htmlResultado;
 
   showLoading(false);
   lucide.createIcons();
@@ -1741,92 +1760,54 @@ async function carregarSelectOrcamentosEntregas() {
 }
 
 
+
 async function carregarProgressoEntregas() {
   const idOrc = document.getElementById('laje-entrega-select').value;
   if (!idOrc) {
     document.getElementById('laje-entrega-resumo').classList.add('hidden');
     return;
   }
-
   showLoading(true);
 
-  // 1. Buscar os tamanhos e quantidades das vigotas do orçamento
   const { data: itens } = await sb.from('laje_itens_orcamento')
-    .select('tamanho_vigota, qtd_vigotas').eq('id_orcamento', idOrc);
+    .select('tamanho_vigota, qtd_vigotas, altura').eq('id_orcamento', idOrc);
 
-  // 2. Montar a lista plana de tamanhos para o algoritmo de corte
-  const tamanhos = [];
+  // Mapa: chave = "altura|tamanho"
+  const totalMap = {};
   (itens || []).forEach(i => {
-    for (let j = 0; j < Number(i.qtd_vigotas); j++) {
-      tamanhos.push(Number(i.tamanho_vigota));
-    }
+    const altura = i.altura || 8;
+    const tam = Number(i.tamanho_vigota).toFixed(2);
+    const chave = `${altura}|${tam}`;
+    totalMap[chave] = (totalMap[chave] || 0) + Number(i.qtd_vigotas);
   });
 
-  // 3. Aplicar o algoritmo selecionado na aba Plano de Corte
-  const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
-  let barras;
-  if (LAJE.algoritmoCorte === 'BFD') {
-    barras = binPackingBFD(tamanhos, barra12m);
-  } else if (LAJE.algoritmoCorte === 'RBF') {
-    barras = binPackingRBF(tamanhos, barra12m, 100);
-  } else if (LAJE.algoritmoCorte === 'DP') {
-    barras = binPackingDP(tamanhos, barra12m);
-  } else {
-    barras = binPackingFFD(tamanhos, barra12m);
-  }
-
-  // 4. Extrair as peças reais do plano de corte (cada corte vira uma vigota individual)
-  const pecasPlano = [];
-  barras.forEach(barra => {
-    barra.cortes.forEach(corte => {
-      const t = corte.toFixed(2);
-      const existente = pecasPlano.find(p => p.tamanho.toFixed(2) === t);
-      if (existente) {
-        existente.qtd++;
-      } else {
-        pecasPlano.push({ tamanho: corte, qtd: 1 });
-      }
-    });
-  });
-
-  // Ordena por tamanho decrescente
-  pecasPlano.sort((a, b) => b.tamanho - a.tamanho);
-
-  // 5. Calcular totais por tamanho com base no plano
-  const totalPorTamanho = {};
-  pecasPlano.forEach(p => {
-    const t = p.tamanho.toFixed(2);
-    totalPorTamanho[t] = p.qtd;
-  });
-
-  // 6. Entregas já realizadas
   const { data: entregas } = await sb.from('laje_entregas')
     .select('*').eq('id_orcamento', idOrc).order('data', { ascending: false });
 
-  // Soma entregue por tamanho
-  const entreguePorTamanho = {};
+  const entregueMap = {};
   let totalPecasEntregues = 0;
   (entregas || []).forEach(e => {
-    const vigotas = e.vigotas_entregues || [];
-    vigotas.forEach(v => {
-      const t = Number(v.tamanho).toFixed(2);
-      entreguePorTamanho[t] = (entreguePorTamanho[t] || 0) + Number(v.qtd);
+    (e.vigotas_entregues || []).forEach(v => {
+      const altura = v.altura || 8;
+      const tam = Number(v.tamanho).toFixed(2);
+      const chave = `${altura}|${tam}`;
+      entregueMap[chave] = (entregueMap[chave] || 0) + Number(v.qtd);
       totalPecasEntregues += Number(v.qtd);
     });
   });
 
-  // 7. Monta tabela de progresso
   const tbody = document.getElementById('laje-entrega-tbody');
-  const tamanhosArr = Object.keys(totalPorTamanho).sort((a, b) => b - a);
+  const chaves = Object.keys(totalMap).sort();
   let totalGeral = 0, pendenteGeral = 0;
-  tbody.innerHTML = tamanhosArr.map(t => {
-    const total = totalPorTamanho[t] || 0;
-    const entregue = entreguePorTamanho[t] || 0;
+  tbody.innerHTML = chaves.map(chave => {
+    const [altura, tam] = chave.split('|');
+    const total = totalMap[chave] || 0;
+    const entregue = entregueMap[chave] || 0;
     const pendente = total - entregue;
     totalGeral += total;
     pendenteGeral += pendente;
     return `<tr class="border-b">
-      <td class="p-3 font-medium">${t} m</td>
+      <td class="p-3 font-medium">TG${altura} – ${tam} m</td>
       <td class="p-3 text-center">${total}</td>
       <td class="p-3 text-center text-green-600">${entregue}</td>
       <td class="p-3 text-center ${pendente > 0 ? 'text-orange-600 font-bold' : 'text-green-600'}">${pendente}</td>
@@ -1841,11 +1822,10 @@ async function carregarProgressoEntregas() {
     </tr>
   `);
 
-  // 8. Histórico de entregas (COM BOTÃO DE IMPRIMIR EM CADA LINHA)
   const histBody = document.getElementById('laje-entrega-historico-tbody');
   histBody.innerHTML = (entregas || []).map(e => {
     const vigotas = e.vigotas_entregues || [];
-    const desc = vigotas.map(v => `${v.qtd}x ${Number(v.tamanho).toFixed(2)}m`).join(', ');
+    const desc = vigotas.map(v => `TG${v.altura||8}: ${v.qtd}x ${Number(v.tamanho).toFixed(2)}m`).join(', ');
     const total = vigotas.reduce((s, v) => s + Number(v.qtd), 0);
     return `<tr class="border-b">
       <td class="p-3">${formatDate(e.data)}</td>
@@ -1858,9 +1838,6 @@ async function carregarProgressoEntregas() {
       </td>
     </tr>`;
   }).join('');
-
-  // 9. Atualiza o modal de entrega com as peças do plano
-  LAJE.ultimasPecasPlano = pecasPlano;
 
   document.getElementById('laje-entrega-resumo').classList.remove('hidden');
   showLoading(false);
@@ -2002,70 +1979,40 @@ async function abrirModalEntregaLaje() {
   document.getElementById('entrega-data').value = new Date().toISOString().split('T')[0];
   document.getElementById('entrega-obs').value = '';
 
-  // 1. Totais por tamanho (já considerando o algoritmo de corte)
   const { data: itens } = await sb.from('laje_itens_orcamento')
-    .select('tamanho_vigota, qtd_vigotas').eq('id_orcamento', idOrc);
-  const tamanhos = [];
+    .select('tamanho_vigota, qtd_vigotas, altura').eq('id_orcamento', idOrc);
+
+  const totalMap = {};
   (itens || []).forEach(i => {
-    for (let j = 0; j < Number(i.qtd_vigotas); j++) {
-      tamanhos.push(Number(i.tamanho_vigota));
-    }
+    const altura = i.altura || 8;
+    const tam = Number(i.tamanho_vigota).toFixed(2);
+    const chave = `${altura}|${tam}`;
+    totalMap[chave] = (totalMap[chave] || 0) + Number(i.qtd_vigotas);
   });
 
-  const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
-  let barras;
-  if (LAJE.algoritmoCorte === 'BFD') {
-    barras = binPackingBFD(tamanhos, barra12m);
-  } else if (LAJE.algoritmoCorte === 'RBF') {
-    barras = binPackingRBF(tamanhos, barra12m, 100);
-  } else if (LAJE.algoritmoCorte === 'DP') {
-    barras = binPackingDP(tamanhos, barra12m);
-  } else {
-    barras = binPackingFFD(tamanhos, barra12m);
-  }
-
-  const pecasPlano = [];
-  barras.forEach(barra => {
-    barra.cortes.forEach(corte => {
-      const t = corte.toFixed(2);
-      const existente = pecasPlano.find(p => p.tamanho.toFixed(2) === t);
-      if (existente) {
-        existente.qtd++;
-      } else {
-        pecasPlano.push({ tamanho: corte, qtd: 1 });
-      }
-    });
-  });
-  pecasPlano.sort((a, b) => b.tamanho - a.tamanho);
-
-  const totalPorTamanho = {};
-  pecasPlano.forEach(p => {
-    const t = p.tamanho.toFixed(2);
-    totalPorTamanho[t] = p.qtd;
-  });
-
-  // 2. Entregas já realizadas
   const { data: entregas } = await sb.from('laje_entregas')
     .select('vigotas_entregues').eq('id_orcamento', idOrc);
-  const entreguePorTamanho = {};
+  const entregueMap = {};
   (entregas || []).forEach(e => {
     (e.vigotas_entregues || []).forEach(v => {
-      const t = Number(v.tamanho).toFixed(2);
-      entreguePorTamanho[t] = (entreguePorTamanho[t] || 0) + Number(v.qtd);
+      const altura = v.altura || 8;
+      const tam = Number(v.tamanho).toFixed(2);
+      const chave = `${altura}|${tam}`;
+      entregueMap[chave] = (entregueMap[chave] || 0) + Number(v.qtd);
     });
   });
 
-  // 3. Montar inputs com valor pendente
   const container = document.getElementById('entrega-vigotas-container');
-  container.innerHTML = Object.keys(totalPorTamanho).sort((a, b) => b - a).map(t => {
-    const total = totalPorTamanho[t] || 0;
-    const entregue = entreguePorTamanho[t] || 0;
+  container.innerHTML = Object.keys(totalMap).sort().map(chave => {
+    const [altura, tam] = chave.split('|');
+    const total = totalMap[chave] || 0;
+    const entregue = entregueMap[chave] || 0;
     const pendente = total - entregue;
     return `<div class="flex items-center gap-2 mb-2">
-      <span class="text-sm font-medium w-20">${t} m</span>
-      <input type="number" id="ent-qtd-${t.replace('.', '_')}" value="${pendente}" min="0" max="${total}"
+      <span class="text-sm font-medium w-28">TG${altura} ${tam}m</span>
+      <input type="number" id="ent-qtd-${chave.replace('.','_').replace('|','_')}" value="${pendente}" min="0" max="${total}"
         class="w-20 p-2 border rounded text-sm text-center">
-      <span class="text-xs text-slate-400">/ ${total} un ${pendente !== total ? `(já entregue: ${entregue})` : ''}</span>
+      <span class="text-xs text-slate-400">/ ${total} un ${pendente !== total ? `(já: ${entregue})` : ''}</span>
     </div>`;
   }).join('');
 
@@ -2082,21 +2029,19 @@ async function registrarEntregaLaje() {
   const data = document.getElementById('entrega-data').value;
   const obs = document.getElementById('entrega-obs').value;
 
-  // Monta o array de vigotas entregues
   const container = document.getElementById('entrega-vigotas-container');
   const inputs = container.querySelectorAll('input[type=number]');
   const vigotas = [];
-  let totalEntregue = 0;
   inputs.forEach(input => {
     const qtd = parseInt(input.value) || 0;
     if (qtd > 0) {
-      const tamanho = parseFloat(input.id.replace('ent-qtd-', '').replace('_', '.'));
-      vigotas.push({ tamanho, qtd });
-      totalEntregue += qtd;
+      const chave = input.id.replace('ent-qtd-', '').replace(/_/g, (m, p) => p ? '.' : '|');
+      const [altura, tamanho] = chave.split('|');
+      vigotas.push({ altura: parseInt(altura), tamanho: parseFloat(tamanho), qtd });
     }
   });
 
-  if (totalEntregue === 0) return showToast('Informe pelo menos uma vigota.', true);
+  if (vigotas.length === 0) return showToast('Informe pelo menos uma vigota.', true);
   if (!data) return showToast('Informe a data.', true);
 
   const { error } = await sb.from('laje_entregas').insert({
