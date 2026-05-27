@@ -826,7 +826,7 @@ async function gerarDetalhamento() {
 
   // Enchimento – Lajota
   if (tiposEnchimento.has('LAJOTA_CERAMICA')) {
-    const totalLajotas = Math.ceil(totalArea * 12);
+    const totalLajotas = Math.ceil(totalArea * 13);
     const custoLajota = custoProduto('Lajota Cerâmica', 1.7);
     addLinha('Lajota', `${totalLajotas} peças`, '', custoLajota, totalLajotas * custoLajota);
     const freteLajota = custoProduto('Frete Lajota', 50);
