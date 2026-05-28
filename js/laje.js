@@ -799,22 +799,37 @@ async function gerarDetalhamento() {
     );
   }
 
-  // ==================== EPS (POR ALTURA) ====================
-  for (const [alturaStr, metros] of Object.entries(epsLinearPorAltura).sort((a,b) => b[0]-a[0])) {
-    const altura = parseInt(alturaStr);
-    const placasEps = Math.ceil(metros);
-    const epsNome = `EPS H${altura} placa 50x100`;
-    const custoEpsPlaca = custoProduto(epsNome, 11.90);
-    addLinha(
-      `EPS H${altura}`,
-      `${placasEps} placas`,
-      `${metros.toFixed(2)} m lineares (equivale a ${placasEps} placas de 1,00×0,50 m)`,
-      custoEpsPlaca,
-      placasEps * custoEpsPlaca
-    );
-    const freteIsopor = custoProduto('Frete Isopor', 0);
-    if (freteIsopor > 0) addLinha('Frete do isopor', '1 un', '', freteIsopor, freteIsopor);
+ // ==================== EPS (POR ALTURA, ARREDONDANDO POR CÔMODO) ====================
+const epsPlacasPorAltura = {};   // { altura: totalPlacas }
+const epsMetrosPorAltura = {};   // { altura: totalMetrosLineares } (apenas informativo)
+
+itens.forEach(i => {
+  if (i.tipo_enchimento === 'EPS') {
+    const altura = i.altura || 8;
+    const metros = Number(i.metragem_eps);
+    const placas = Math.ceil(metros);   // arredonda cada cômodo individualmente
+    if (!epsPlacasPorAltura[altura]) epsPlacasPorAltura[altura] = 0;
+    if (!epsMetrosPorAltura[altura]) epsMetrosPorAltura[altura] = 0;
+    epsPlacasPorAltura[altura] += placas;
+    epsMetrosPorAltura[altura] += metros;
   }
+});
+
+for (const [alturaStr, placas] of Object.entries(epsPlacasPorAltura).sort((a,b) => b[0]-a[0])) {
+  const altura = parseInt(alturaStr);
+  const metros = epsMetrosPorAltura[alturaStr] || 0;
+  const epsNome = `EPS H${altura} placa 50x100`;
+  const custoEpsPlaca = custoProduto(epsNome, 11.90);
+  addLinha(
+    `EPS H${altura}`,
+    `${placas} placas`,
+    `${metros.toFixed(2)} m lineares (equivale a ${placas} placas de 1,00×0,50 m)`,
+    custoEpsPlaca,
+    placas * custoEpsPlaca
+  );
+  const freteIsopor = custoProduto('Frete Isopor', 0);
+  if (freteIsopor > 0) addLinha('Frete do isopor', '1 un', '', freteIsopor, freteIsopor);
+}
 
   // ==================== LAJOTA (SOMENTE ÁREA CORRESPONDENTE) ====================
   if (tiposEnchimento.has('LAJOTA_CERAMICA') && areaLajota > 0) {
