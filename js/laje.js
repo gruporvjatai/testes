@@ -1,5 +1,3 @@
-
-
 // ==================== ESTADO DO MÓDULO LAJES ====================
 const LAJE = {
   comodosTemp: [],
@@ -528,84 +526,59 @@ async function gerarPlanoCorte() {
   showLoading(true);
 
   const { data: itens, error } = await sb.from('laje_itens_orcamento')
-    .select('tamanho_vigota, qtd_vigotas, altura').eq('id_orcamento', idOrc);
+    .select('tamanho_vigota, qtd_vigotas').eq('id_orcamento', idOrc);
   if (error || !itens?.length) {
     showLoading(false);
     return showToast('Nenhuma vigota encontrada.', true);
   }
 
-  // Agrupa vigotas por altura
-  const grupos = {};
-  itens.forEach(i => {
-    const altura = i.altura || 8;
-    if (!grupos[altura]) grupos[altura] = [];
-    for (let j = 0; j < Number(i.qtd_vigotas); j++) {
-      grupos[altura].push(Number(i.tamanho_vigota));
+  const tamanhos = [];
+  for (const item of itens) {
+    for (let i = 0; i < Number(item.qtd_vigotas); i++) {
+      tamanhos.push(Number(item.tamanho_vigota));
     }
-  });
-
-  const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
-  const resultadoPorAltura = [];  // para o cache de impressão
-  let htmlResultado = '';
-
-  for (const [altura, tamanhos] of Object.entries(grupos).sort((a,b) => b[0]-a[0])) {
-    let barras;
-    if (LAJE.algoritmoCorte === 'BFD') {
-      barras = binPackingBFD(tamanhos, barra12m);
-    } else if (LAJE.algoritmoCorte === 'RBF') {
-      barras = binPackingRBF(tamanhos, barra12m, 100);
-    } else if (LAJE.algoritmoCorte === 'DP') {
-      barras = binPackingDP(tamanhos, barra12m);
-    } else {
-      barras = binPackingFFD(tamanhos, barra12m);
-    }
-
-    resultadoPorAltura.push({ altura: parseInt(altura), barras });
-
-    let totalSobra = 0;
-    const linhas = barras.map((b, i) => {
-      totalSobra += b.sobra;
-      const aproveitamento = ((b.usado / barra12m) * 100).toFixed(1);
-      let statusHtml = '';
-      if (b.sobra < 0.30) statusHtml = '<span class="text-green-600 font-bold">🟢 Ótimo</span>';
-      else if (b.sobra < 0.80) statusHtml = '<span class="text-amber-600 font-bold">🟡 Atenção</span>';
-      else statusHtml = '<span class="text-red-600 font-bold">🔴 Desperdício</span>';
-      return `<tr class="border-b">
-        <td class="p-3 font-bold">Barra ${i+1}</td>
-        <td class="p-3 font-mono">${b.cortes.map(c => c.toFixed(2)+'m').join(' + ')}</td>
-        <td class="p-3">${b.sobra.toFixed(2)} m</td>
-        <td class="p-3">${aproveitamento}%</td>
-        <td class="p-3">${statusHtml}</td>
-      </tr>`;
-    }).join('');
-
-    htmlResultado += `
-      <div class="mb-8">
-        <h3 class="font-bold text-lg text-slate-800 mb-2">🔹 Treliça TG${altura} – ${tamanhos.length} peças</h3>
-        <div class="overflow-x-auto bg-white rounded-xl border shadow-sm">
-          <table class="w-full text-sm text-left">
-            <thead class="bg-slate-50 text-slate-600">
-              <tr>
-                <th class="p-3">Barra</th>
-                <th class="p-3">Cortes (sequência)</th>
-                <th class="p-3">Sobra</th>
-                <th class="p-3">Aproveitamento</th>
-                <th class="p-3">Status</th>
-              </tr>
-            </thead>
-            <tbody>${linhas}</tbody>
-          </table>
-        </div>
-        <p class="text-sm text-slate-500 mt-2">Total: ${barras.length} barra(s) de 12,00 m | Sobra acumulada: ${totalSobra.toFixed(2)} m (${((totalSobra/(barras.length*12))*100).toFixed(1)}% de perda)</p>
-      </div>
-    `;
   }
 
-  document.getElementById('laje-corte-resultado').classList.remove('hidden');
-  document.getElementById('laje-corte-tbody').innerHTML = htmlResultado;
+  const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
+  let barras;
+  if (LAJE.algoritmoCorte === 'BFD') {
+    barras = binPackingBFD(tamanhos, barra12m);
+  } else if (LAJE.algoritmoCorte === 'RBF') {
+    barras = binPackingRBF(tamanhos, barra12m, 100);
+  } else if (LAJE.algoritmoCorte === 'DP') {
+    barras = binPackingDP(tamanhos, barra12m);
+  } else {
+    barras = binPackingFFD(tamanhos, barra12m);
+  }
+  LAJE.planoCorteCache = { barras, idOrc };
 
-  // Cache para impressão (array de grupos)
-  LAJE.planoCorteCache = { grupos: resultadoPorAltura, idOrc };
+  document.getElementById('laje-corte-resultado').classList.remove('hidden');
+  const tbody = document.getElementById('laje-corte-tbody');
+  let totalSobra = 0;
+
+  tbody.innerHTML = barras.map((b, i) => {
+    totalSobra += b.sobra;
+    const aproveitamento = ((b.usado / barra12m) * 100).toFixed(1);
+    let statusHtml = '';
+    if (b.sobra < 0.30) statusHtml = '<span class="text-green-600 font-bold">🟢 Ótimo</span>';
+    else if (b.sobra < 0.80) statusHtml = '<span class="text-amber-600 font-bold">🟡 Atenção</span>';
+    else statusHtml = '<span class="text-red-600 font-bold">🔴 Desperdício</span>';
+    return `<tr class="border-b">
+      <td class="p-3 font-bold">Barra ${i+1}</td>
+      <td class="p-3 font-mono">${b.cortes.map(c => c.toFixed(2)+'m').join(' + ')}</td>
+      <td class="p-3">${b.sobra.toFixed(2)} m</td>
+      <td class="p-3">${aproveitamento}%</td>
+      <td class="p-3">${statusHtml}</td>
+    </tr>`;
+  }).join('');
+
+  tbody.insertAdjacentHTML('beforeend', `
+    <tr class="bg-slate-50 font-bold">
+      <td colspan="5" class="p-3 text-center">
+        Total: ${barras.length} barra(s) de 12,00 m | Sobra acumulada: ${totalSobra.toFixed(2)} m (${((totalSobra/(barras.length*12))*100).toFixed(1)}% de perda)
+      </td>
+    </tr>
+  `);
 
   showLoading(false);
   lucide.createIcons();
@@ -615,65 +588,48 @@ async function gerarPlanoCorte() {
 
 function imprimirPlanoCorte() {
   if (!LAJE.planoCorteCache) return showToast('Gere o plano de corte primeiro.', true);
-  const { grupos, idOrc } = LAJE.planoCorteCache;
+  const printArea = document.getElementById('print-area');
+  if (!printArea) return;
+  const { barras, idOrc } = LAJE.planoCorteCache;
   const orc = LAJE.orcamentosList.find(o => o.id == idOrc);
   const cliente = orc ? orc.cliente_nome : 'Não informado';
 
-  let htmlGrupos = '';
-  let totalBarrasGeral = 0;
-  let totalSobraGeral = 0;
-  let totalCortesGeral = 0;
-
-  grupos.forEach(grupo => {
-    const { altura, barras } = grupo;
-    // Agrupa barras com cortes idênticos dentro da mesma altura
-    const gruposMap = new Map();
-    barras.forEach(b => {
-      const chave = JSON.stringify(b.cortes);
-      if (!gruposMap.has(chave)) {
-        gruposMap.set(chave, { cortes: b.cortes, qtd: 0, sobra: b.sobra });
-      }
-      gruposMap.get(chave).qtd++;
-    });
-
-    const gruposArr = Array.from(gruposMap.values()).sort((a, b) => b.qtd - a.qtd);
-    const coresFundo = ['#e0f2fe', '#fef9c3', '#dcfce7', '#e2e8f0', '#f3e8ff', '#dbeafe'];
-    let corIndex = 0;
-    let linhas = gruposArr.map(g => {
-      const cor = coresFundo[corIndex % coresFundo.length];
-      corIndex++;
-      totalSobraGeral += g.sobra * g.qtd;
-      totalCortesGeral += g.cortes.length * g.qtd;
-      const cortesTd = g.cortes.map(c =>
-        `<span style="display:inline-block; margin-right:8px; font-weight:bold; font-size:13px;">${c.toFixed(2)} m</span><span style="font-size:14px;">☐</span>`
-      ).join('<span style="margin:0 4px; color:#999;">|</span>');
-      return `<tr style="background-color:${cor};">
-        <td style="padding:5px; border:1px solid #000; text-align:center; font-weight:bold;">${g.qtd}x</td>
-        <td style="padding:5px; border:1px solid #000;">${cortesTd}</td>
-      </tr>`;
-    }).join('');
-
-    totalBarrasGeral += barras.length;
-
-    htmlGrupos += `
-      <div style="margin-bottom:20px;">
-        <h3 style="margin:0 0 5px 0; font-size:13px;">🔹 Treliça TG${altura} – ${barras.length} barra(s)</h3>
-        <table width="100%" style="border-collapse:collapse; margin-bottom:10px;">
-          <thead>
-            <tr style="background:#e5e7eb;">
-              <th style="padding:6px; border:1px solid #000; width:60px;">Qtd</th>
-              <th style="padding:6px; border:1px solid #000;">Cortes (☐ após cada = concluído)</th>
-            </tr>
-          </thead>
-          <tbody>${linhas}</tbody>
-        </table>
-      </div>
-    `;
+  // Agrupa barras com cortes idênticos
+  const gruposMap = new Map();
+  barras.forEach(b => {
+    const chave = JSON.stringify(b.cortes);
+    if (!gruposMap.has(chave)) {
+      gruposMap.set(chave, { cortes: b.cortes, qtd: 0, sobra: b.sobra });
+    }
+    gruposMap.get(chave).qtd++;
   });
 
-  const perdaPerc = ((totalSobraGeral / (totalBarrasGeral * 12)) * 100).toFixed(1);
+  // Converte para array e ordena por quantidade decrescente (maior → menor)
+  const grupos = Array.from(gruposMap.values())
+    .sort((a, b) => b.qtd - a.qtd);
 
-  const printArea = document.getElementById('print-area');
+  // Paleta de cores profissionais (sem rosa)
+  const coresFundo = ['#e0f2fe', '#fef9c3', '#dcfce7', '#e2e8f0', '#f3e8ff', '#dbeafe'];
+  let corIndex = 0;
+
+  let totalSobra = 0;
+  let linhas = grupos.map((g, idx) => {
+    totalSobra += g.sobra * g.qtd;
+    const cor = coresFundo[corIndex % coresFundo.length];
+    corIndex++;
+
+    const cortesTd = g.cortes.map(c => 
+      `<span style="display:inline-block; margin-right:8px; font-weight:bold; font-size:13px;">${c.toFixed(2)} m</span><span style="font-size:14px;">☐</span>`
+    ).join('<span style="margin:0 4px; color:#999;">|</span>');
+
+    return `<tr style="background-color:${cor};">
+      <td style="padding:5px; border:1px solid #000; text-align:center; font-weight:bold;">${g.qtd}x</td>
+      <td style="padding:5px; border:1px solid #000;">${cortesTd}</td>
+    </tr>`;
+  }).join('');
+
+  const perdaPerc = ((totalSobra / (barras.length * 12)) * 100).toFixed(1);
+
   printArea.innerHTML = `
     <div style="font-family: 'Segoe UI', Arial, sans-serif; padding:10mm; max-width:190mm; margin:0 auto; background:#fff; font-size:12px;">
       <table width="100%" style="border-bottom:1px solid #ea580c; padding-bottom:5px; margin-bottom:10px;">
@@ -688,11 +644,20 @@ function imprimirPlanoCorte() {
         </tr>
       </table>
       <div style="margin-bottom:10px; font-size:11px;">
-        <strong>Total geral de barras:</strong> ${totalBarrasGeral} |
-        <strong>Sobra total:</strong> ${totalSobraGeral.toFixed(2)} m (${perdaPerc}%) |
-        <strong>Cortes:</strong> ${totalCortesGeral} unidades
+        <strong>Total de barras:</strong> ${barras.length} | 
+        <strong>Sobra total:</strong> ${totalSobra.toFixed(2)} m (${perdaPerc}%) |
+        <strong>Cortes:</strong> ${barras.reduce((s,b) => s + b.cortes.length, 0)} unidades
       </div>
-      ${htmlGrupos}
+      <p style="font-size:11px; margin:0 0 8px 0;">🔹 Cada linha representa um <strong>grupo de barras idênticas</strong>. A quantidade está na primeira coluna.</p>
+      <table width="100%" style="border-collapse:collapse; margin-bottom:15px;">
+        <thead>
+          <tr style="background:#e5e7eb;">
+            <th style="padding:6px; border:1px solid #000; width:60px;">Qtd</th>
+            <th style="padding:6px; border:1px solid #000;">Cortes (☐ após cada = concluído)</th>
+          </tr>
+        </thead>
+        <tbody>${linhas}</tbody>
+      </table>
       <div style="border-top:1px solid #ea580c; padding-top:8px; display:flex; justify-content:space-between; font-size:10px;">
         <div>Conferido por: ________________________</div>
         <div>Data: _____ / _____ / __________</div>
@@ -720,121 +685,190 @@ async function gerarDetalhamento() {
   if (!idOrc) return showToast('Selecione um orçamento.', true);
   showLoading(true);
 
+  // 1. Buscar itens do orçamento
   const { data: itens, error } = await sb.from('laje_itens_orcamento').select('*').eq('id_orcamento', idOrc);
-  if (error || !itens?.length) { showLoading(false); return showToast('Nenhum item encontrado.', true); }
+  if (error || !itens?.length) { showLoading(false); return showToast('Nenhum item.', true); }
 
+  // 2. Garantir lista de produtos carregada
   await carregarProdutosLajeSilencioso();
 
-  // ==================== ACUMULADORES ====================
-  let totalArea  = 0;
-  let areaLajota = 0;
-
-  const vigotasPorAltura = {};
-  const epsDataPorAltura = {};
+  let totalVigotas = 0, totalArea = 0, totalEpsLinear = 0;
+  const tamanhosVigota = [];
   const tiposEnchimento = new Set();
-
+  const alturas = new Set();
   itens.forEach(i => {
-    const area   = Number(i.area || (i.vao_menor * i.vao_maior));
-    const altura = i.altura || 8;
-    const tipo   = i.tipo_enchimento;
-    const qtd    = Number(i.qtd_vigotas);
-    const tam    = Number(i.tamanho_vigota);
-
-    totalArea += area;
-    tiposEnchimento.add(tipo);
-
-    // Treliças (todos os tipos)
-    if (!vigotasPorAltura[altura]) vigotasPorAltura[altura] = [];
-    for (let j = 0; j < qtd; j++) vigotasPorAltura[altura].push(tam);
-
-    // EPS
-    if (tipo === 'EPS') {
-      const metros       = Number(i.metragem_eps);
-      const placasComodo = Math.ceil(metros);
-      if (!epsDataPorAltura[altura]) epsDataPorAltura[altura] = { metros: 0, placas: 0 };
-      epsDataPorAltura[altura].metros += metros;
-      epsDataPorAltura[altura].placas += placasComodo;
-    }
-
-    // Lajota
-    if (tipo === 'LAJOTA_CERAMICA') areaLajota += area;
+    totalVigotas += Number(i.qtd_vigotas);
+    totalArea += Number(i.area || (i.vao_menor * i.vao_maior));
+    if (i.tipo_enchimento === 'EPS') totalEpsLinear += Number(i.metragem_eps);
+    for (let j = 0; j < Number(i.qtd_vigotas); j++) tamanhosVigota.push(Number(i.tamanho_vigota));
+    tiposEnchimento.add(i.tipo_enchimento);
+    alturas.add(i.altura);
   });
 
-  // ==================== HELPERS ====================
+  const metrosLinearesTrelica = tamanhosVigota.reduce((a, b) => a + b, 0);
+
+  // ========== ALGORITMO DE CORTE DAS TRELIÇAS (conforme escolha do usuário) ==========
+  const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
+  let barras;
+  if (LAJE.algoritmoCorte === 'BFD') {
+    barras = binPackingBFD(tamanhosVigota, barra12m);
+  } else if (LAJE.algoritmoCorte === 'RBF') {
+    barras = binPackingRBF(tamanhosVigota, barra12m, 100);
+  } else if (LAJE.algoritmoCorte === 'DP') {
+    barras = binPackingDP(tamanhosVigota, barra12m);
+  } else {
+    barras = binPackingFFD(tamanhosVigota, barra12m);
+  }
+
+  const numBarras = barras.length;
+  const alturaModa = [...alturas].sort((a, b) => b - a)[0] || 8;
+  const tipoPredominante = [...tiposEnchimento][0] || 'EPS';
+
+  // Capeamento (apenas sobre as vigotas)
+  const espessuraCapeamento = 0.02; // 2 cm fixo
+  const larguraCapeamento = 0.12;   // 12 cm de largura
+  const secaoCapeamento = larguraCapeamento * espessuraCapeamento;
+  const volumeConcreto = metrosLinearesTrelica * secaoCapeamento;
+
+  // Traço (rendimento linear de 48 m por traço)
+  const volumePorTraco = 0.1152;
+  const numTracos = Math.ceil(volumeConcreto / volumePorTraco);
+  const metrosLinearesPorTraco = 48;
+  const sacosCimento = Math.ceil(numTracos * 1.5);
+  const areiaM3 = numTracos * (6.5 * 0.018);
+  const britaM3 = numTracos * (5 * 0.018);
+  const latasAreia = Math.round(areiaM3 / 0.018);
+  const latasBrita = Math.round(britaM3 / 0.018);
+
+  // ========== VERGALHÃO 6mm (ID 26) – SEMPRE COM ALGORITMO DP (ÓTIMO) ==========
+  // Coleta todos os comprimentos das vigotas que atendem à condição (>= 3,40 m)
+  const comprimentosVergalhao = [];
+  for (const item of itens) {
+    const tamVigota = Number(item.tamanho_vigota);
+    const qtdVigotas = Number(item.qtd_vigotas);
+    if (tamVigota >= 3.40) {
+      for (let i = 0; i < qtdVigotas; i++) {
+        comprimentosVergalhao.push(tamVigota);
+      }
+    }
+  }
+
+  let barrasVergalhao = 0;
+  let custoTotalVergalhao = 0;
+  let gruposVergalhao = []; // para exibição
+
+  if (comprimentosVergalhao.length > 0) {
+    // Usa o algoritmo DP (Programação Dinâmica) para otimizar o corte do vergalhão
+    const corteVergalhao = binPackingDP(comprimentosVergalhao, 12.0);
+    barrasVergalhao = corteVergalhao.length;
+
+    // Agrupa os cortes iguais para exibição
+    const gruposMap = new Map();
+    corteVergalhao.forEach(barra => {
+      barra.cortes.forEach(corte => {
+        const key = corte.toFixed(2);
+        gruposMap.set(key, (gruposMap.get(key) || 0) + 1);
+      });
+    });
+    gruposVergalhao = Array.from(gruposMap.entries())
+      .map(([tamanho, qtd]) => ({ tamanho: parseFloat(tamanho), qtd }))
+      .sort((a, b) => b.tamanho - a.tamanho);
+
+    const custoPorBarraVerg = custoProdutoPorId(26, 25.00);
+    custoTotalVergalhao = barrasVergalhao * custoPorBarraVerg;
+  }
+
+  // Funções auxiliares
   function custoProduto(nomePadrao, padrao = 0) {
     const p = LAJE.produtosList.find(x => x.descricao === nomePadrao);
     return p ? Number(p.custo_unitario) : padrao;
   }
 
-  const linhas   = [];
+  function custoProdutoPorId(id, padrao = 0) {
+    const p = LAJE.produtosList.find(x => x.id === id);
+    return p ? Number(p.custo_unitario) : padrao;
+  }
+
+  const linhas = [];
   let custoTotal = 0;
 
   function addLinha(desc, qtd, composicao, vlrUnit, vlrTotal) {
-    linhas.push({ desc, qtd, composicao: composicao || '', unitario: formatMoney(vlrUnit), total: formatMoney(vlrTotal) });
+    linhas.push({
+      desc,
+      qtd,
+      composicao: composicao || '',
+      unitario: formatMoney(vlrUnit),
+      total: formatMoney(vlrTotal)
+    });
     custoTotal += vlrTotal;
   }
 
-  // ==================== TRELIÇAS POR ALTURA ====================
-  const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
-  let metrosLinearesTotal = 0;   // ← acumulador para o concreto
+  // Treliça
+  const trelicaNome = `Treliça TG${alturaModa} 12m`;
+  const custoTrelica = custoProduto(trelicaNome, alturaModa <= 8 ? 68 : (alturaModa <= 12 ? 92 : 105));
+  addLinha('Treliça', `${numBarras} barras`, `${metrosLinearesTrelica.toFixed(2)} m lineares`, custoTrelica, numBarras * custoTrelica);
 
-  for (const [alturaStr, tamanhos] of Object.entries(vigotasPorAltura).sort((a, b) => Number(b[0]) - Number(a[0]))) {
-    const altura = parseInt(alturaStr);
-    let barras;
-    if      (LAJE.algoritmoCorte === 'BFD') barras = binPackingBFD(tamanhos, barra12m);
-    else if (LAJE.algoritmoCorte === 'RBF') barras = binPackingRBF(tamanhos, barra12m, 100);
-    else if (LAJE.algoritmoCorte === 'DP')  barras = binPackingDP(tamanhos, barra12m);
-    else                                    barras = binPackingFFD(tamanhos, barra12m);
-
-    const numBarras      = barras.length;
-    const metrosLineares = tamanhos.reduce((a, b) => a + b, 0);
-    metrosLinearesTotal += metrosLineares;   // ← acumula para o concreto
-
-    const trelicaNome  = `Treliça TG${altura} 12m`;
-    const custoTrelica = custoProduto(trelicaNome, altura <= 8 ? 68 : altura <= 12 ? 92 : 105);
-
-    addLinha(`Treliça TG${altura}`, `${numBarras} barras`, `${tamanhos.length} peças – ${metrosLineares.toFixed(2)} m lineares`, custoTrelica, numBarras * custoTrelica);
-  }
-
-  // ==================== EPS POR ALTURA ====================
-  for (const [alturaStr, eps] of Object.entries(epsDataPorAltura).sort((a, b) => Number(b[0]) - Number(a[0]))) {
-    const altura = parseInt(alturaStr);
-    const epsNome = `EPS H${altura} placa 50x100`;
+  // Enchimento – EPS
+  if (tiposEnchimento.has('EPS')) {
+    const placasEps = Math.ceil(totalEpsLinear);
+    const epsNome = `EPS H${alturaModa} placa 50x100`;
     const custoEpsPlaca = custoProduto(epsNome, 11.90);
-    addLinha(`EPS H${altura}`, `${eps.placas} placas`, `${eps.metros.toFixed(2)} m lineares (equivale a ${eps.placas} placas de 1,00×0,50 m)`, custoEpsPlaca, eps.placas * custoEpsPlaca);
+    addLinha(
+      'EPS (isopor)',
+      `${placasEps} placas`,
+      `${totalEpsLinear.toFixed(2)} m lineares (equivale a ${placasEps} placas de 1,00×0,50 m)`,
+      custoEpsPlaca,
+      placasEps * custoEpsPlaca
+    );
     const freteIsopor = custoProduto('Frete Isopor', 0);
     if (freteIsopor > 0) addLinha('Frete do isopor', '1 un', '', freteIsopor, freteIsopor);
   }
 
-  // ==================== LAJOTA ====================
-  if (tiposEnchimento.has('LAJOTA_CERAMICA') && areaLajota > 0) {
-    const totalLajotas = Math.ceil(areaLajota * 13);
-    const custoLajota  = custoProduto('Lajota Cerâmica', 1.7);
-    addLinha('Lajota', `${totalLajotas} peças`, `Área com lajota: ${areaLajota.toFixed(2)} m²`, custoLajota, totalLajotas * custoLajota);
+  // Enchimento – Lajota
+  if (tiposEnchimento.has('LAJOTA_CERAMICA')) {
+    const totalLajotas = Math.ceil(totalArea * 13);
+    const custoLajota = custoProduto('Lajota Cerâmica', 1.7);
+    addLinha('Lajota', `${totalLajotas} peças`, '', custoLajota, totalLajotas * custoLajota);
     const freteLajota = custoProduto('Frete Lajota', 50);
     addLinha('Frete da lajota', '1 un', '', freteLajota, freteLajota);
   }
 
-  // ==================== CONCRETO (BASEADO NO COMPRIMENTO LINEAR DAS TRELIÇAS) ====================
-  const larguraCapeamento   = 0.12;   // 12 cm
-  const espessuraCapeamento = 0.02;   // 2 cm
-  const secaoCapeamento     = larguraCapeamento * espessuraCapeamento;   // 0,0024 m²
-  const volumeConcreto      = metrosLinearesTotal * secaoCapeamento;
-  const volumePorTraco      = 0.231;
-  const numTracos           = Math.ceil(volumeConcreto / volumePorTraco);
-  const metrosLinearesPorTraco = volumePorTraco / secaoCapeamento;   // ≈ 96,25 m
+  // Concreto
+  addLinha(
+    'Cimento',
+    `${sacosCimento} sacos`,
+    `${numTracos} traços (${metrosLinearesPorTraco.toFixed(0)} m lineares de capeamento por traço)`,
+    custoProduto('Cimento CP II 50kg', 37),
+    sacosCimento * custoProduto('Cimento CP II 50kg', 37)
+  );
+  addLinha(
+    'Areia Grossa',
+    `${areiaM3.toFixed(3)} m³`,
+    `${latasAreia} latas (18 L)`,
+    custoProduto('Areia Grossa', 200),
+    areiaM3 * custoProduto('Areia Grossa', 200)
+  );
+  addLinha(
+    'Brita 0',
+    `${britaM3.toFixed(3)} m³`,
+    `${latasBrita} latas (18 L)`,
+    custoProduto('Brita 0', 200),
+    britaM3 * custoProduto('Brita 0', 200)
+  );
 
-  const sacosCimento = Math.ceil(numTracos * 1.5);
-  const areiaM3      = numTracos * 0.117;
-  const britaM3      = numTracos * 0.09;
-  const latasAreia   = Math.ceil(areiaM3 / 0.018);
-  const latasBrita   = Math.ceil(britaM3 / 0.018);
+  // Vergalhão (se houver)
+  if (comprimentosVergalhao.length > 0) {
+    const descricaoCortes = gruposVergalhao.map(g => `${g.qtd}x ${g.tamanho.toFixed(2)}m`).join(', ');
+    addLinha(
+      'Vergalhão CA-60 6mm',
+      `${barrasVergalhao} barra(s) de 12 m`,
+      `${comprimentosVergalhao.length} peças: ${descricaoCortes}`,
+      custoProdutoPorId(26, 25.00),
+      custoTotalVergalhao
+    );
+  }
 
-  addLinha('Cimento', `${sacosCimento} sacos`, `${numTracos} traços (${metrosLinearesPorTraco.toFixed(0)} m lineares por traço)`, custoProduto('Cimento CP II 50kg', 37), sacosCimento * custoProduto('Cimento CP II 50kg', 37));
-  addLinha('Areia Grossa', `${areiaM3.toFixed(3)} m³`, `${latasAreia} latas (18 L)`, custoProduto('Areia Grossa', 200), areiaM3 * custoProduto('Areia Grossa', 200));
-  addLinha('Brita 0', `${britaM3.toFixed(3)} m³`, `${latasBrita} latas (18 L)`, custoProduto('Brita 0', 200), britaM3 * custoProduto('Brita 0', 200));
-
-  // ==================== SERVIÇOS GERAIS ====================
+  // Serviços gerais
   addLinha('Disco de Corte', '1 un', '', custoProduto('Disco de Corte', 10), custoProduto('Disco de Corte', 10));
   addLinha('ART', '1 un', '', custoProduto('ART', 28), custoProduto('ART', 28));
   addLinha('Plotagem', '1 un', '', custoProduto('Plotagem de Projeto', 10), custoProduto('Plotagem de Projeto', 10));
@@ -848,13 +882,14 @@ async function gerarDetalhamento() {
     if (laudo > 0) addLinha('Laudo Técnico', '1 un', '', laudo, laudo);
   }
 
-  // ==================== RESULTADO ====================
   LAJE.custoTotalDetalhamento = custoTotal;
-  LAJE.areaTotalDetalhamento  = totalArea;
+  LAJE.areaTotalDetalhamento = totalArea;
 
-  const margemInicial    = 40;
-  const precoVendaInicial = custoTotal * (1 + margemInicial / 100) * 1.06;
-  const precoM2Inicial    = totalArea > 0 ? precoVendaInicial / totalArea : 0;
+  const margemInicial = 40;
+  let precoVendaInicial = custoTotal * (1 + margemInicial / 100);
+// Como o frete já vem marcado, aplica 6%
+  precoVendaInicial *= 1.06;
+  const precoM2Inicial = totalArea > 0 ? precoVendaInicial / totalArea : 0;
 
   const html = `
     <div class="bg-white rounded-xl border shadow-sm p-6">
@@ -867,19 +902,51 @@ async function gerarDetalhamento() {
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="bg-slate-50">
-            <tr><th class="p-3 text-left">Descrição</th><th class="p-3 text-center">Quantidade</th><th class="p-3 text-center">Composição</th><th class="p-3 text-right">Valor Unit.</th><th class="p-3 text-right">Total</th></tr>
+            <tr>
+              <th class="p-3 text-left">Descrição</th>
+              <th class="p-3 text-center">Quantidade</th>
+              <th class="p-3 text-center">Composição</th>
+              <th class="p-3 text-right">Valor Unit.</th>
+              <th class="p-3 text-right">Total</th>
+            </tr>
           </thead>
           <tbody>
-            ${linhas.map(l => `<tr class="border-b"><td class="p-3 font-medium">${l.desc}</td><td class="p-3 text-center">${l.qtd}</td><td class="p-3 text-center text-xs text-slate-500">${l.composicao}</td><td class="p-3 text-right">${l.unitario}</td><td class="p-3 text-right">${l.total}</td></tr>`).join('')}
+            ${linhas.map(l => `
+              <tr class="border-b">
+                <td class="p-3 font-medium">${l.desc}</td>
+                <td class="p-3 text-center">${l.qtd}</td>
+                <td class="p-3 text-center text-xs text-slate-500">${l.composicao}</td>
+                <td class="p-3 text-right">${l.unitario}</td>
+                <td class="p-3 text-right">${l.total}</td>
+              </tr>`).join('')}
           </tbody>
         </table>
       </div>
       <div class="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-        <div class="bg-slate-50 p-4 rounded-lg text-center"><p class="text-slate-500 text-sm">Custo Total</p><p class="text-2xl font-bold text-slate-800" id="detalhe-custo-total">${formatMoney(custoTotal)}</p></div>
-        <div class="bg-slate-50 p-4 rounded-lg text-center"><label class="text-slate-500 text-sm block">Margem de Lucro (%)</label><input type="number" id="detalhe-margem-lucro" value="40" min="0" max="200" step="0.1" class="w-24 text-center border rounded p-1 mt-1 mx-auto" onchange="recalcularDetalhamento()"></div>
-        <div class="bg-white border border-slate-200 p-4 rounded-lg text-center flex flex-col items-center justify-center"><label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="detalhe-frete-check" class="w-5 h-5 accent-orange-600" onchange="recalcularDetalhamento()" checked><span class="text-sm font-medium text-slate-700">Frete (6%)</span></label></div>
-        <div class="bg-orange-50 p-4 rounded-lg text-center"><p class="text-slate-500 text-sm">Preço de Venda</p><p class="text-2xl font-bold text-orange-600" id="detalhe-preco-venda">${formatMoney(precoVendaInicial)}</p><p class="text-xs text-slate-500"><span id="detalhe-preco-m2">${formatMoney(precoM2Inicial)}</span> / m²</p><button onclick="enviarParaOrcamento()" class="mt-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs inline-flex items-center gap-1 whitespace-nowrap"><i data-lucide="send" class="w-3 h-3"></i> Enviar para Orçamento</button></div>
-      </div>
+        <div class="bg-slate-50 p-4 rounded-lg text-center">
+          <p class="text-slate-500 text-sm">Custo Total</p>
+          <p class="text-2xl font-bold text-slate-800" id="detalhe-custo-total">${formatMoney(custoTotal)}</p>
+        </div>
+        <div class="bg-slate-50 p-4 rounded-lg text-center">
+          <label class="text-slate-500 text-sm block">Margem de Lucro (%)</label>
+          <input type="number" id="detalhe-margem-lucro" value="40" min="0" max="200" step="0.1"
+            class="w-24 text-center border rounded p-1 mt-1 mx-auto" onchange="recalcularDetalhamento()">
+        </div>
+        <div class="bg-white border border-slate-200 p-4 rounded-lg text-center flex flex-col items-center justify-center">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="detalhe-frete-check" class="w-5 h-5 accent-orange-600" onchange="recalcularDetalhamento()" checked>
+            <span class="text-sm font-medium text-slate-700">Frete (6%)</span>
+          </label>
+        </div>
+        <div class="bg-orange-50 p-4 rounded-lg text-center">
+          <p class="text-slate-500 text-sm">Preço de Venda</p>
+          <p class="text-2xl font-bold text-orange-600" id="detalhe-preco-venda">${formatMoney(precoVendaInicial)}</p>
+          <p class="text-xs text-slate-500"><span id="detalhe-preco-m2">${formatMoney(precoM2Inicial)}</span> / m²</p>       
+          <button onclick="enviarParaOrcamento()" class="mt-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs inline-flex items-center gap-1 whitespace-nowrap">
+            <i data-lucide="send" class="w-3 h-3"></i> Enviar para Orçamento
+          </button>
+        </div>        
+      </div>      
       <p class="text-xs text-slate-400 mt-2">* Ajuste a margem de lucro ou marque o frete para recalcular o preço de venda automaticamente.</p>
     </div>
   `;
@@ -889,6 +956,8 @@ async function gerarDetalhamento() {
   showLoading(false);
   lucide.createIcons();
 }
+
+
 
 
 
@@ -1659,10 +1728,6 @@ function imprimirDetalhamento() {
 // ==================== ABA ENTREGAS ====================
 
 // Carrega o <select> com orçamentos aprovados
-// ==================== ABA ENTREGAS (ATUALIZADA) ====================
-
-// ==================== ABA ENTREGAS (ATUALIZADA – sem duplicatas) ====================
-
 async function carregarSelectOrcamentosEntregas() {
   const sel = document.getElementById('laje-entrega-select');
   if (!sel) return;
@@ -1675,53 +1740,93 @@ async function carregarSelectOrcamentosEntregas() {
   sel.onchange = () => carregarProgressoEntregas();
 }
 
+
 async function carregarProgressoEntregas() {
   const idOrc = document.getElementById('laje-entrega-select').value;
   if (!idOrc) {
     document.getElementById('laje-entrega-resumo').classList.add('hidden');
     return;
   }
+
   showLoading(true);
 
+  // 1. Buscar os tamanhos e quantidades das vigotas do orçamento
   const { data: itens } = await sb.from('laje_itens_orcamento')
-    .select('tamanho_vigota, qtd_vigotas, altura').eq('id_orcamento', idOrc);
+    .select('tamanho_vigota, qtd_vigotas').eq('id_orcamento', idOrc);
 
-  // Mapa: chave = "altura|tamanho"
-  const totalMap = {};
+  // 2. Montar a lista plana de tamanhos para o algoritmo de corte
+  const tamanhos = [];
   (itens || []).forEach(i => {
-    const altura = i.altura || 8;
-    const tam = Number(i.tamanho_vigota).toFixed(2);
-    const chave = `${altura}|${tam}`;
-    totalMap[chave] = (totalMap[chave] || 0) + Number(i.qtd_vigotas);
+    for (let j = 0; j < Number(i.qtd_vigotas); j++) {
+      tamanhos.push(Number(i.tamanho_vigota));
+    }
   });
 
+  // 3. Aplicar o algoritmo selecionado na aba Plano de Corte
+  const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
+  let barras;
+  if (LAJE.algoritmoCorte === 'BFD') {
+    barras = binPackingBFD(tamanhos, barra12m);
+  } else if (LAJE.algoritmoCorte === 'RBF') {
+    barras = binPackingRBF(tamanhos, barra12m, 100);
+  } else if (LAJE.algoritmoCorte === 'DP') {
+    barras = binPackingDP(tamanhos, barra12m);
+  } else {
+    barras = binPackingFFD(tamanhos, barra12m);
+  }
+
+  // 4. Extrair as peças reais do plano de corte (cada corte vira uma vigota individual)
+  const pecasPlano = [];
+  barras.forEach(barra => {
+    barra.cortes.forEach(corte => {
+      const t = corte.toFixed(2);
+      const existente = pecasPlano.find(p => p.tamanho.toFixed(2) === t);
+      if (existente) {
+        existente.qtd++;
+      } else {
+        pecasPlano.push({ tamanho: corte, qtd: 1 });
+      }
+    });
+  });
+
+  // Ordena por tamanho decrescente
+  pecasPlano.sort((a, b) => b.tamanho - a.tamanho);
+
+  // 5. Calcular totais por tamanho com base no plano
+  const totalPorTamanho = {};
+  pecasPlano.forEach(p => {
+    const t = p.tamanho.toFixed(2);
+    totalPorTamanho[t] = p.qtd;
+  });
+
+  // 6. Entregas já realizadas
   const { data: entregas } = await sb.from('laje_entregas')
     .select('*').eq('id_orcamento', idOrc).order('data', { ascending: false });
 
-  const entregueMap = {};
+  // Soma entregue por tamanho
+  const entreguePorTamanho = {};
   let totalPecasEntregues = 0;
   (entregas || []).forEach(e => {
-    (e.vigotas_entregues || []).forEach(v => {
-      const altura = v.altura || 8;
-      const tam = Number(v.tamanho).toFixed(2);
-      const chave = `${altura}|${tam}`;
-      entregueMap[chave] = (entregueMap[chave] || 0) + Number(v.qtd);
+    const vigotas = e.vigotas_entregues || [];
+    vigotas.forEach(v => {
+      const t = Number(v.tamanho).toFixed(2);
+      entreguePorTamanho[t] = (entreguePorTamanho[t] || 0) + Number(v.qtd);
       totalPecasEntregues += Number(v.qtd);
     });
   });
 
+  // 7. Monta tabela de progresso
   const tbody = document.getElementById('laje-entrega-tbody');
-  const chaves = Object.keys(totalMap).sort();
+  const tamanhosArr = Object.keys(totalPorTamanho).sort((a, b) => b - a);
   let totalGeral = 0, pendenteGeral = 0;
-  tbody.innerHTML = chaves.map(chave => {
-    const [altura, tam] = chave.split('|');
-    const total = totalMap[chave] || 0;
-    const entregue = entregueMap[chave] || 0;
+  tbody.innerHTML = tamanhosArr.map(t => {
+    const total = totalPorTamanho[t] || 0;
+    const entregue = entreguePorTamanho[t] || 0;
     const pendente = total - entregue;
     totalGeral += total;
     pendenteGeral += pendente;
     return `<tr class="border-b">
-      <td class="p-3 font-medium">TG${altura} – ${tam} m</td>
+      <td class="p-3 font-medium">${t} m</td>
       <td class="p-3 text-center">${total}</td>
       <td class="p-3 text-center text-green-600">${entregue}</td>
       <td class="p-3 text-center ${pendente > 0 ? 'text-orange-600 font-bold' : 'text-green-600'}">${pendente}</td>
@@ -1736,10 +1841,11 @@ async function carregarProgressoEntregas() {
     </tr>
   `);
 
+  // 8. Histórico de entregas (COM BOTÃO DE IMPRIMIR EM CADA LINHA)
   const histBody = document.getElementById('laje-entrega-historico-tbody');
   histBody.innerHTML = (entregas || []).map(e => {
     const vigotas = e.vigotas_entregues || [];
-    const desc = vigotas.map(v => `TG${v.altura||8}: ${v.qtd}x ${Number(v.tamanho).toFixed(2)}m`).join(', ');
+    const desc = vigotas.map(v => `${v.qtd}x ${Number(v.tamanho).toFixed(2)}m`).join(', ');
     const total = vigotas.reduce((s, v) => s + Number(v.qtd), 0);
     return `<tr class="border-b">
       <td class="p-3">${formatDate(e.data)}</td>
@@ -1753,11 +1859,142 @@ async function carregarProgressoEntregas() {
     </tr>`;
   }).join('');
 
+  // 9. Atualiza o modal de entrega com as peças do plano
+  LAJE.ultimasPecasPlano = pecasPlano;
+
   document.getElementById('laje-entrega-resumo').classList.remove('hidden');
   showLoading(false);
   lucide.createIcons();
 }
 
+
+/*async function carregarProgressoEntregas() {
+  const idOrc = document.getElementById('laje-entrega-select').value;
+  if (!idOrc) {
+    document.getElementById('laje-entrega-resumo').classList.add('hidden');
+    return;
+  }
+
+  showLoading(true);
+
+  // 1. Buscar os tamanhos e quantidades das vigotas do orçamento
+  const { data: itens } = await sb.from('laje_itens_orcamento')
+    .select('tamanho_vigota, qtd_vigotas').eq('id_orcamento', idOrc);
+
+  // 2. Montar a lista plana de tamanhos para o algoritmo de corte
+  const tamanhos = [];
+  (itens || []).forEach(i => {
+    for (let j = 0; j < Number(i.qtd_vigotas); j++) {
+      tamanhos.push(Number(i.tamanho_vigota));
+    }
+  });
+
+  // 3. Aplicar o algoritmo selecionado na aba Plano de Corte
+  const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
+  let barras;
+  if (LAJE.algoritmoCorte === 'BFD') {
+    barras = binPackingBFD(tamanhos, barra12m);
+  } else if (LAJE.algoritmoCorte === 'RBF') {
+    barras = binPackingRBF(tamanhos, barra12m, 100);
+  } else if (LAJE.algoritmoCorte === 'DP') {
+    barras = binPackingDP(tamanhos, barra12m);
+  } else {
+    barras = binPackingFFD(tamanhos, barra12m);
+  }
+
+  // 4. Extrair as peças reais do plano de corte (cada corte vira uma vigota individual)
+  const pecasPlano = []; // array de { tamanho, qtd }
+  barras.forEach(barra => {
+    barra.cortes.forEach(corte => {
+      const t = corte.toFixed(2);
+      const existente = pecasPlano.find(p => p.tamanho.toFixed(2) === t);
+      if (existente) {
+        existente.qtd++;
+      } else {
+        pecasPlano.push({ tamanho: corte, qtd: 1 });
+      }
+    });
+  });
+
+  // Ordena por tamanho decrescente
+  pecasPlano.sort((a, b) => b.tamanho - a.tamanho);
+
+  // 5. Calcular totais por tamanho com base no plano
+  const totalPorTamanho = {};
+  pecasPlano.forEach(p => {
+    const t = p.tamanho.toFixed(2);
+    totalPorTamanho[t] = p.qtd;
+  });
+
+  // 6. Entregas já realizadas
+  const { data: entregas } = await sb.from('laje_entregas')
+    .select('*').eq('id_orcamento', idOrc).order('data', { ascending: false });
+
+  // Soma entregue por tamanho
+  const entreguePorTamanho = {};
+  let totalPecasEntregues = 0;
+  (entregas || []).forEach(e => {
+    const vigotas = e.vigotas_entregues || [];
+    vigotas.forEach(v => {
+      const t = Number(v.tamanho).toFixed(2);
+      entreguePorTamanho[t] = (entreguePorTamanho[t] || 0) + Number(v.qtd);
+      totalPecasEntregues += Number(v.qtd);
+    });
+  });
+
+  // 7. Monta tabela de progresso
+  const tbody = document.getElementById('laje-entrega-tbody');
+  const tamanhosArr = Object.keys(totalPorTamanho).sort((a, b) => b - a);
+  let totalGeral = 0, pendenteGeral = 0;
+  tbody.innerHTML = tamanhosArr.map(t => {
+    const total = totalPorTamanho[t] || 0;
+    const entregue = entreguePorTamanho[t] || 0;
+    const pendente = total - entregue;
+    totalGeral += total;
+    pendenteGeral += pendente;
+    return `<tr class="border-b">
+      <td class="p-3 font-medium">${t} m</td>
+      <td class="p-3 text-center">${total}</td>
+      <td class="p-3 text-center text-green-600">${entregue}</td>
+      <td class="p-3 text-center ${pendente > 0 ? 'text-orange-600 font-bold' : 'text-green-600'}">${pendente}</td>
+    </tr>`;
+  }).join('');
+  tbody.insertAdjacentHTML('beforeend', `
+    <tr class="bg-slate-50 font-bold">
+      <td class="p-3">Total</td>
+      <td class="p-3 text-center">${totalGeral}</td>
+      <td class="p-3 text-center">${totalPecasEntregues}</td>
+      <td class="p-3 text-center">${pendenteGeral}</td>
+    </tr>
+  `);
+
+  // 8. Histórico de entregas
+  const histBody = document.getElementById('laje-entrega-historico-tbody');
+  histBody.innerHTML = (entregas || []).map(e => {
+    const vigotas = e.vigotas_entregues || [];
+    const desc = vigotas.map(v => `${v.qtd}x ${Number(v.tamanho).toFixed(2)}m`).join(', ');
+    const total = vigotas.reduce((s, v) => s + Number(v.qtd), 0);
+    return `<tr class="border-b">
+      <td class="p-3">${formatDate(e.data)}</td>
+      <td class="p-3 text-xs">${desc || '-'}</td>
+      <td class="p-3 text-center">${total}</td>
+    </tr>`;
+  }).join('');
+
+  // 9. Atualiza o modal de entrega com as peças do plano
+  LAJE.ultimasPecasPlano = pecasPlano; // guarda para uso no modal
+
+  document.getElementById('laje-entrega-resumo').classList.remove('hidden');
+  showLoading(false);
+}*/
+
+
+
+
+
+
+
+// Abre o modal de registro de entrega
 async function abrirModalEntregaLaje() {
   const idOrc = document.getElementById('laje-entrega-select').value;
   if (!idOrc) return showToast('Selecione um orçamento.', true);
@@ -1765,40 +2002,70 @@ async function abrirModalEntregaLaje() {
   document.getElementById('entrega-data').value = new Date().toISOString().split('T')[0];
   document.getElementById('entrega-obs').value = '';
 
+  // 1. Totais por tamanho (já considerando o algoritmo de corte)
   const { data: itens } = await sb.from('laje_itens_orcamento')
-    .select('tamanho_vigota, qtd_vigotas, altura').eq('id_orcamento', idOrc);
-
-  const totalMap = {};
+    .select('tamanho_vigota, qtd_vigotas').eq('id_orcamento', idOrc);
+  const tamanhos = [];
   (itens || []).forEach(i => {
-    const altura = i.altura || 8;
-    const tam = Number(i.tamanho_vigota).toFixed(2);
-    const chave = `${altura}|${tam}`;
-    totalMap[chave] = (totalMap[chave] || 0) + Number(i.qtd_vigotas);
+    for (let j = 0; j < Number(i.qtd_vigotas); j++) {
+      tamanhos.push(Number(i.tamanho_vigota));
+    }
   });
 
+  const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
+  let barras;
+  if (LAJE.algoritmoCorte === 'BFD') {
+    barras = binPackingBFD(tamanhos, barra12m);
+  } else if (LAJE.algoritmoCorte === 'RBF') {
+    barras = binPackingRBF(tamanhos, barra12m, 100);
+  } else if (LAJE.algoritmoCorte === 'DP') {
+    barras = binPackingDP(tamanhos, barra12m);
+  } else {
+    barras = binPackingFFD(tamanhos, barra12m);
+  }
+
+  const pecasPlano = [];
+  barras.forEach(barra => {
+    barra.cortes.forEach(corte => {
+      const t = corte.toFixed(2);
+      const existente = pecasPlano.find(p => p.tamanho.toFixed(2) === t);
+      if (existente) {
+        existente.qtd++;
+      } else {
+        pecasPlano.push({ tamanho: corte, qtd: 1 });
+      }
+    });
+  });
+  pecasPlano.sort((a, b) => b.tamanho - a.tamanho);
+
+  const totalPorTamanho = {};
+  pecasPlano.forEach(p => {
+    const t = p.tamanho.toFixed(2);
+    totalPorTamanho[t] = p.qtd;
+  });
+
+  // 2. Entregas já realizadas
   const { data: entregas } = await sb.from('laje_entregas')
     .select('vigotas_entregues').eq('id_orcamento', idOrc);
-  const entregueMap = {};
+  const entreguePorTamanho = {};
   (entregas || []).forEach(e => {
     (e.vigotas_entregues || []).forEach(v => {
-      const altura = v.altura || 8;
-      const tam = Number(v.tamanho).toFixed(2);
-      const chave = `${altura}|${tam}`;
-      entregueMap[chave] = (entregueMap[chave] || 0) + Number(v.qtd);
+      const t = Number(v.tamanho).toFixed(2);
+      entreguePorTamanho[t] = (entreguePorTamanho[t] || 0) + Number(v.qtd);
     });
   });
 
+  // 3. Montar inputs com valor pendente
   const container = document.getElementById('entrega-vigotas-container');
-  container.innerHTML = Object.keys(totalMap).sort().map(chave => {
-    const [altura, tam] = chave.split('|');
-    const total = totalMap[chave] || 0;
-    const entregue = entregueMap[chave] || 0;
+  container.innerHTML = Object.keys(totalPorTamanho).sort((a, b) => b - a).map(t => {
+    const total = totalPorTamanho[t] || 0;
+    const entregue = entreguePorTamanho[t] || 0;
     const pendente = total - entregue;
     return `<div class="flex items-center gap-2 mb-2">
-      <span class="text-sm font-medium w-28">TG${altura} ${tam}m</span>
-      <input type="number" id="ent-qtd-${chave.replace('.','_').replace('|','_')}" value="${pendente}" min="0" max="${total}"
+      <span class="text-sm font-medium w-20">${t} m</span>
+      <input type="number" id="ent-qtd-${t.replace('.', '_')}" value="${pendente}" min="0" max="${total}"
         class="w-20 p-2 border rounded text-sm text-center">
-      <span class="text-xs text-slate-400">/ ${total} un ${pendente !== total ? `(já: ${entregue})` : ''}</span>
+      <span class="text-xs text-slate-400">/ ${total} un ${pendente !== total ? `(já entregue: ${entregue})` : ''}</span>
     </div>`;
   }).join('');
 
@@ -1809,24 +2076,27 @@ function fecharModalEntregaLaje() {
   document.getElementById('modal-entrega-laje').classList.add('hidden');
 }
 
+// Registra a entrega no banco
 async function registrarEntregaLaje() {
   const idOrc = document.getElementById('laje-entrega-select').value;
   const data = document.getElementById('entrega-data').value;
   const obs = document.getElementById('entrega-obs').value;
 
+  // Monta o array de vigotas entregues
   const container = document.getElementById('entrega-vigotas-container');
   const inputs = container.querySelectorAll('input[type=number]');
   const vigotas = [];
+  let totalEntregue = 0;
   inputs.forEach(input => {
     const qtd = parseInt(input.value) || 0;
     if (qtd > 0) {
-      const chave = input.id.replace('ent-qtd-', '').replace(/_/g, (m, p) => p ? '.' : '|');
-      const [altura, tamanho] = chave.split('|');
-      vigotas.push({ altura: parseInt(altura), tamanho: parseFloat(tamanho), qtd });
+      const tamanho = parseFloat(input.id.replace('ent-qtd-', '').replace('_', '.'));
+      vigotas.push({ tamanho, qtd });
+      totalEntregue += qtd;
     }
   });
 
-  if (vigotas.length === 0) return showToast('Informe pelo menos uma vigota.', true);
+  if (totalEntregue === 0) return showToast('Informe pelo menos uma vigota.', true);
   if (!data) return showToast('Informe a data.', true);
 
   const { error } = await sb.from('laje_entregas').insert({
@@ -1843,8 +2113,7 @@ async function registrarEntregaLaje() {
   carregarProgressoEntregas();
 }
 
-// As funções de impressão (imprimirRegistroEntregaModal, imprimirBackupEntrega, imprimirEntregaHistorico)
-// permanecem as mesmas já existentes no arquivo, sem duplicatas.
+
 
 
 function imprimirRegistroEntregaModal() {
@@ -2132,4 +2401,3 @@ async function duplicarOrcamentoLaje(id) {
   }
   showLoading(false);
 }
-
