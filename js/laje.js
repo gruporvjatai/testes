@@ -729,6 +729,7 @@ async function gerarDetalhamento() {
 
   let totalArea  = 0;
   let areaLajota = 0;
+  let areaEPS    = 0;   // ← NOVO: área apenas das lajes com EPS
 
   // Trelicas: TODOS os itens, agrupados por altura (EPS e Lajota usam trelica do mesmo jeito)
   const vigotasPorAltura = {};   // { altura: [comprimentos...] }
@@ -755,8 +756,9 @@ async function gerarDetalhamento() {
 
     // --- EPS (somente tipo EPS) ---
     if (tipo === 'EPS') {
+      areaEPS += area;                            // ← NOVO: acumula área EPS
       const metros       = Number(i.metragem_eps);
-      const placasComodo = Math.ceil(metros); // arredonda por cômodo, não pelo total
+      const placasComodo = Math.ceil(metros);     // arredonda por cômodo, não pelo total
       if (!epsDataPorAltura[altura]) epsDataPorAltura[altura] = { metros: 0, placas: 0 };
       epsDataPorAltura[altura].metros += metros;
       epsDataPorAltura[altura].placas += placasComodo;
@@ -849,42 +851,46 @@ async function gerarDetalhamento() {
     addLinha('Frete da lajota', '1 un', '', freteLajota, freteLajota);
   }
 
-  // ==================== CONCRETO (área total do orçamento) ====================
+  // ==================== CONCRETO (SOMENTE SOBRE A ÁREA COM EPS) ====================
 
-  const espessuraCapeamento    = 0.02;
-  const larguraCapeamento      = 0.12;
-  const secaoCapeamento        = larguraCapeamento * espessuraCapeamento;
-  const volumeConcreto         = totalArea * espessuraCapeamento;
-  const volumePorTraco         = 0.231;
-  const numTracos              = Math.ceil(volumeConcreto / volumePorTraco);
-  const metrosLinearesPorTraco = volumePorTraco / secaoCapeamento;
-  const sacosCimento           = Math.ceil(numTracos * 1.5);
-  const areiaM3                = numTracos * 0.117;
-  const britaM3                = numTracos * 0.09;
-  const latasAreia             = Math.ceil(areiaM3 / 0.018);
-  const latasBrita             = Math.ceil(britaM3 / 0.018);
+  const areaComEPS = areaEPS;   // ← CORREÇÃO: usa apenas a área das lajes com EPS
 
-  addLinha(
-    'Cimento',
-    `${sacosCimento} sacos`,
-    `${numTracos} traços (${metrosLinearesPorTraco.toFixed(0)} m lineares por traço)`,
-    custoProduto('Cimento CP II 50kg', 37),
-    sacosCimento * custoProduto('Cimento CP II 50kg', 37)
-  );
-  addLinha(
-    'Areia Grossa',
-    `${areiaM3.toFixed(3)} m³`,
-    `${latasAreia} latas (18 L)`,
-    custoProduto('Areia Grossa', 200),
-    areiaM3 * custoProduto('Areia Grossa', 200)
-  );
-  addLinha(
-    'Brita 0',
-    `${britaM3.toFixed(3)} m³`,
-    `${latasBrita} latas (18 L)`,
-    custoProduto('Brita 0', 200),
-    britaM3 * custoProduto('Brita 0', 200)
-  );
+  if (areaComEPS > 0) {
+    const espessuraCapeamento    = 0.02;
+    const larguraCapeamento      = 0.12;
+    const secaoCapeamento        = larguraCapeamento * espessuraCapeamento;
+    const volumeConcreto         = areaComEPS * espessuraCapeamento;
+    const volumePorTraco         = 0.231;
+    const numTracos              = Math.ceil(volumeConcreto / volumePorTraco);
+    const metrosLinearesPorTraco = volumePorTraco / secaoCapeamento;
+    const sacosCimento           = Math.ceil(numTracos * 1.5);
+    const areiaM3                = numTracos * 0.117;
+    const britaM3                = numTracos * 0.09;
+    const latasAreia             = Math.ceil(areiaM3 / 0.018);
+    const latasBrita             = Math.ceil(britaM3 / 0.018);
+
+    addLinha(
+      'Cimento',
+      `${sacosCimento} sacos`,
+      `${numTracos} traços (${metrosLinearesPorTraco.toFixed(0)} m lineares por traço)`,
+      custoProduto('Cimento CP II 50kg', 37),
+      sacosCimento * custoProduto('Cimento CP II 50kg', 37)
+    );
+    addLinha(
+      'Areia Grossa',
+      `${areiaM3.toFixed(3)} m³`,
+      `${latasAreia} latas (18 L)`,
+      custoProduto('Areia Grossa', 200),
+      areiaM3 * custoProduto('Areia Grossa', 200)
+    );
+    addLinha(
+      'Brita 0',
+      `${britaM3.toFixed(3)} m³`,
+      `${latasBrita} latas (18 L)`,
+      custoProduto('Brita 0', 200),
+      britaM3 * custoProduto('Brita 0', 200)
+    );
+  }
 
   // ==================== SERVIÇOS GERAIS ====================
 
