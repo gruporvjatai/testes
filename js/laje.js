@@ -726,48 +726,41 @@ async function gerarDetalhamento() {
   await carregarProdutosLajeSilencioso();
 
   // ==================== ACUMULADORES ====================
-
   let totalArea  = 0;
   let areaLajota = 0;
 
-  // Treliças: TODOS os itens, agrupados por altura (EPS e Lajota usam treliça do mesmo jeito)
-  const vigotasPorAltura = {};   // { altura: [comprimentos...] }
-
-  // EPS: somente itens EPS, agrupados por altura
-  // Arredonda metros por cômodo individualmente (Math.ceil por item)
-  const epsDataPorAltura = {};   // { altura: { metros: number, placas: number } }
-
+  const vigotasPorAltura = {};
+  const epsDataPorAltura = {};
   const tiposEnchimento = new Set();
 
   itens.forEach(i => {
-    const area      = Number(i.area || (i.vao_menor * i.vao_maior));
-    const altura    = i.altura || 8;
-    const tipo      = i.tipo_enchimento;
-    const qtd       = Number(i.qtd_vigotas);
-    const tam       = Number(i.tamanho_vigota);
+    const area   = Number(i.area || (i.vao_menor * i.vao_maior));
+    const altura = i.altura || 8;
+    const tipo   = i.tipo_enchimento;
+    const qtd    = Number(i.qtd_vigotas);
+    const tam    = Number(i.tamanho_vigota);
 
     totalArea += area;
     tiposEnchimento.add(tipo);
 
-    // --- Treliças (todos os tipos) ---
+    // Treliças (todos os tipos)
     if (!vigotasPorAltura[altura]) vigotasPorAltura[altura] = [];
     for (let j = 0; j < qtd; j++) vigotasPorAltura[altura].push(tam);
 
-    // --- EPS (somente tipo EPS) ---
+    // EPS
     if (tipo === 'EPS') {
       const metros       = Number(i.metragem_eps);
-      const placasComodo = Math.ceil(metros); // arredonda por cômodo, não pelo total
+      const placasComodo = Math.ceil(metros);
       if (!epsDataPorAltura[altura]) epsDataPorAltura[altura] = { metros: 0, placas: 0 };
       epsDataPorAltura[altura].metros += metros;
       epsDataPorAltura[altura].placas += placasComodo;
     }
 
-    // --- Lajota (somente tipo LAJOTA_CERAMICA) ---
+    // Lajota
     if (tipo === 'LAJOTA_CERAMICA') areaLajota += area;
   });
 
   // ==================== HELPERS ====================
-
   function custoProduto(nomePadrao, padrao = 0) {
     const p = LAJE.produtosList.find(x => x.descricao === nomePadrao);
     return p ? Number(p.custo_unitario) : padrao;
@@ -777,23 +770,16 @@ async function gerarDetalhamento() {
   let custoTotal = 0;
 
   function addLinha(desc, qtd, composicao, vlrUnit, vlrTotal) {
-    linhas.push({
-      desc,
-      qtd,
-      composicao: composicao || '',
-      unitario: formatMoney(vlrUnit),
-      total: formatMoney(vlrTotal)
-    });
+    linhas.push({ desc, qtd, composicao: composicao || '', unitario: formatMoney(vlrUnit), total: formatMoney(vlrTotal) });
     custoTotal += vlrTotal;
   }
 
   // ==================== TRELIÇAS POR ALTURA ====================
-
   const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
+  let metrosLinearesTotal = 0;   // ← acumulador para o concreto
 
   for (const [alturaStr, tamanhos] of Object.entries(vigotasPorAltura).sort((a, b) => Number(b[0]) - Number(a[0]))) {
     const altura = parseInt(alturaStr);
-
     let barras;
     if      (LAJE.algoritmoCorte === 'BFD') barras = binPackingBFD(tamanhos, barra12m);
     else if (LAJE.algoritmoCorte === 'RBF') barras = binPackingRBF(tamanhos, barra12m, 100);
@@ -802,112 +788,67 @@ async function gerarDetalhamento() {
 
     const numBarras      = barras.length;
     const metrosLineares = tamanhos.reduce((a, b) => a + b, 0);
-    const trelicaNome    = `Treliça TG${altura} 12m`;
-    const custoTrelica   = custoProduto(trelicaNome, altura <= 8 ? 68 : altura <= 12 ? 92 : 105);
+    metrosLinearesTotal += metrosLineares;   // ← acumula para o concreto
 
-    addLinha(
-      `Treliça TG${altura}`,
-      `${numBarras} barras`,
-      `${tamanhos.length} peças – ${metrosLineares.toFixed(2)} m lineares`,
-      custoTrelica,
-      numBarras * custoTrelica
-    );
+    const trelicaNome  = `Treliça TG${altura} 12m`;
+    const custoTrelica = custoProduto(trelicaNome, altura <= 8 ? 68 : altura <= 12 ? 92 : 105);
+
+    addLinha(`Treliça TG${altura}`, `${numBarras} barras`, `${tamanhos.length} peças – ${metrosLineares.toFixed(2)} m lineares`, custoTrelica, numBarras * custoTrelica);
   }
 
-  // ==================== EPS POR ALTURA (somente itens EPS) ====================
-
+  // ==================== EPS POR ALTURA ====================
   for (const [alturaStr, eps] of Object.entries(epsDataPorAltura).sort((a, b) => Number(b[0]) - Number(a[0]))) {
-    const altura        = parseInt(alturaStr);
-    const epsNome       = `EPS H${altura} placa 50x100`;
+    const altura = parseInt(alturaStr);
+    const epsNome = `EPS H${altura} placa 50x100`;
     const custoEpsPlaca = custoProduto(epsNome, 11.90);
-
-    addLinha(
-      `EPS H${altura}`,
-      `${eps.placas} placas`,
-      `${eps.metros.toFixed(2)} m lineares (equivale a ${eps.placas} placas de 1,00×0,50 m)`,
-      custoEpsPlaca,
-      eps.placas * custoEpsPlaca
-    );
-
+    addLinha(`EPS H${altura}`, `${eps.placas} placas`, `${eps.metros.toFixed(2)} m lineares (equivale a ${eps.placas} placas de 1,00×0,50 m)`, custoEpsPlaca, eps.placas * custoEpsPlaca);
     const freteIsopor = custoProduto('Frete Isopor', 0);
     if (freteIsopor > 0) addLinha('Frete do isopor', '1 un', '', freteIsopor, freteIsopor);
   }
 
-  // ==================== LAJOTA (somente área de itens lajota) ====================
-
+  // ==================== LAJOTA ====================
   if (tiposEnchimento.has('LAJOTA_CERAMICA') && areaLajota > 0) {
     const totalLajotas = Math.ceil(areaLajota * 13);
     const custoLajota  = custoProduto('Lajota Cerâmica', 1.7);
-    addLinha(
-      'Lajota',
-      `${totalLajotas} peças`,
-      `Área com lajota: ${areaLajota.toFixed(2)} m²`,
-      custoLajota,
-      totalLajotas * custoLajota
-    );
+    addLinha('Lajota', `${totalLajotas} peças`, `Área com lajota: ${areaLajota.toFixed(2)} m²`, custoLajota, totalLajotas * custoLajota);
     const freteLajota = custoProduto('Frete Lajota', 50);
     addLinha('Frete da lajota', '1 un', '', freteLajota, freteLajota);
   }
 
-  // ==================== CONCRETO (COMUM A TODAS AS LAJES) ====================
+  // ==================== CONCRETO (BASEADO NO COMPRIMENTO LINEAR DAS TRELIÇAS) ====================
+  const larguraCapeamento   = 0.12;   // 12 cm
+  const espessuraCapeamento = 0.02;   // 2 cm
+  const secaoCapeamento     = larguraCapeamento * espessuraCapeamento;   // 0,0024 m²
+  const volumeConcreto      = metrosLinearesTotal * secaoCapeamento;
+  const volumePorTraco      = 0.231;
+  const numTracos           = Math.ceil(volumeConcreto / volumePorTraco);
+  const metrosLinearesPorTraco = volumePorTraco / secaoCapeamento;   // ≈ 96,25 m
 
-  const espessuraCapeamento    = 0.02;
-  const larguraCapeamento      = 0.12;
-  const secaoCapeamento        = larguraCapeamento * espessuraCapeamento;
-  const volumeConcreto         = totalArea * espessuraCapeamento;   // ← USA A ÁREA TOTAL
-  const volumePorTraco         = 0.231;
-  const numTracos              = Math.ceil(volumeConcreto / volumePorTraco);
-  const metrosLinearesPorTraco = volumePorTraco / secaoCapeamento;
-  const sacosCimento           = Math.ceil(numTracos * 1.5);
-  const areiaM3                = numTracos * 0.117;
-  const britaM3                = numTracos * 0.09;
-  const latasAreia             = Math.ceil(areiaM3 / 0.018);
-  const latasBrita             = Math.ceil(britaM3 / 0.018);
+  const sacosCimento = Math.ceil(numTracos * 1.5);
+  const areiaM3      = numTracos * 0.117;
+  const britaM3      = numTracos * 0.09;
+  const latasAreia   = Math.ceil(areiaM3 / 0.018);
+  const latasBrita   = Math.ceil(britaM3 / 0.018);
 
-  addLinha(
-    'Cimento',
-    `${sacosCimento} sacos`,
-    `${numTracos} traços (${metrosLinearesPorTraco.toFixed(0)} m lineares por traço)`,
-    custoProduto('Cimento CP II 50kg', 37),
-    sacosCimento * custoProduto('Cimento CP II 50kg', 37)
-  );
-  addLinha(
-    'Areia Grossa',
-    `${areiaM3.toFixed(3)} m³`,
-    `${latasAreia} latas (18 L)`,
-    custoProduto('Areia Grossa', 200),
-    areiaM3 * custoProduto('Areia Grossa', 200)
-  );
-  addLinha(
-    'Brita 0',
-    `${britaM3.toFixed(3)} m³`,
-    `${latasBrita} latas (18 L)`,
-    custoProduto('Brita 0', 200),
-    britaM3 * custoProduto('Brita 0', 200)
-  );
+  addLinha('Cimento', `${sacosCimento} sacos`, `${numTracos} traços (${metrosLinearesPorTraco.toFixed(0)} m lineares por traço)`, custoProduto('Cimento CP II 50kg', 37), sacosCimento * custoProduto('Cimento CP II 50kg', 37));
+  addLinha('Areia Grossa', `${areiaM3.toFixed(3)} m³`, `${latasAreia} latas (18 L)`, custoProduto('Areia Grossa', 200), areiaM3 * custoProduto('Areia Grossa', 200));
+  addLinha('Brita 0', `${britaM3.toFixed(3)} m³`, `${latasBrita} latas (18 L)`, custoProduto('Brita 0', 200), britaM3 * custoProduto('Brita 0', 200));
 
   // ==================== SERVIÇOS GERAIS ====================
-
   addLinha('Disco de Corte', '1 un', '', custoProduto('Disco de Corte', 10), custoProduto('Disco de Corte', 10));
-  addLinha('ART',            '1 un', '', custoProduto('ART', 28),            custoProduto('ART', 28));
-  addLinha('Plotagem',       '1 un', '', custoProduto('Plotagem de Projeto', 10), custoProduto('Plotagem de Projeto', 10));
-  addLinha('Viagem',         '1 un', '', custoProduto('Viagem de Entrega', 50),   custoProduto('Viagem de Entrega', 50));
-
-  const ajudanteUnit  = custoProduto('Diária de Ajudante', 4.5);
-  const ajudanteTotal = totalArea * ajudanteUnit;
-  addLinha('Diária Ajudante', `${totalArea.toFixed(2)} m²`, '', ajudanteUnit, ajudanteTotal);
-
-  const comissaoUnit  = custoProduto('Comissão', 1);
-  const comissaoTotal = totalArea * comissaoUnit;
-  addLinha('Comissão', `${totalArea.toFixed(2)} m²`, '', comissaoUnit, comissaoTotal);
-
+  addLinha('ART', '1 un', '', custoProduto('ART', 28), custoProduto('ART', 28));
+  addLinha('Plotagem', '1 un', '', custoProduto('Plotagem de Projeto', 10), custoProduto('Plotagem de Projeto', 10));
+  addLinha('Viagem', '1 un', '', custoProduto('Viagem de Entrega', 50), custoProduto('Viagem de Entrega', 50));
+  const ajudanteTotal = totalArea * custoProduto('Diária de Ajudante', 4.5);
+  addLinha('Diária Ajudante', `${totalArea.toFixed(2)} m²`, '', custoProduto('Diária de Ajudante', 4.5), ajudanteTotal);
+  const comissaoTotal = totalArea * custoProduto('Comissão', 1);
+  addLinha('Comissão', `${totalArea.toFixed(2)} m²`, '', custoProduto('Comissão', 1), comissaoTotal);
   if (tiposEnchimento.has('EPS')) {
     const laudo = custoProduto('Laudo Técnico', 300);
     if (laudo > 0) addLinha('Laudo Técnico', '1 un', '', laudo, laudo);
   }
 
   // ==================== RESULTADO ====================
-
   LAJE.custoTotalDetalhamento = custoTotal;
   LAJE.areaTotalDetalhamento  = totalArea;
 
@@ -926,50 +867,18 @@ async function gerarDetalhamento() {
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="bg-slate-50">
-            <tr>
-              <th class="p-3 text-left">Descrição</th>
-              <th class="p-3 text-center">Quantidade</th>
-              <th class="p-3 text-center">Composição</th>
-              <th class="p-3 text-right">Valor Unit.</th>
-              <th class="p-3 text-right">Total</th>
-            </tr>
+            <tr><th class="p-3 text-left">Descrição</th><th class="p-3 text-center">Quantidade</th><th class="p-3 text-center">Composição</th><th class="p-3 text-right">Valor Unit.</th><th class="p-3 text-right">Total</th></tr>
           </thead>
           <tbody>
-            ${linhas.map(l => `
-              <tr class="border-b">
-                <td class="p-3 font-medium">${l.desc}</td>
-                <td class="p-3 text-center">${l.qtd}</td>
-                <td class="p-3 text-center text-xs text-slate-500">${l.composicao}</td>
-                <td class="p-3 text-right">${l.unitario}</td>
-                <td class="p-3 text-right">${l.total}</td>
-              </tr>`).join('')}
+            ${linhas.map(l => `<tr class="border-b"><td class="p-3 font-medium">${l.desc}</td><td class="p-3 text-center">${l.qtd}</td><td class="p-3 text-center text-xs text-slate-500">${l.composicao}</td><td class="p-3 text-right">${l.unitario}</td><td class="p-3 text-right">${l.total}</td></tr>`).join('')}
           </tbody>
         </table>
       </div>
       <div class="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-        <div class="bg-slate-50 p-4 rounded-lg text-center">
-          <p class="text-slate-500 text-sm">Custo Total</p>
-          <p class="text-2xl font-bold text-slate-800" id="detalhe-custo-total">${formatMoney(custoTotal)}</p>
-        </div>
-        <div class="bg-slate-50 p-4 rounded-lg text-center">
-          <label class="text-slate-500 text-sm block">Margem de Lucro (%)</label>
-          <input type="number" id="detalhe-margem-lucro" value="40" min="0" max="200" step="0.1"
-            class="w-24 text-center border rounded p-1 mt-1 mx-auto" onchange="recalcularDetalhamento()">
-        </div>
-        <div class="bg-white border border-slate-200 p-4 rounded-lg text-center flex flex-col items-center justify-center">
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="detalhe-frete-check" class="w-5 h-5 accent-orange-600" onchange="recalcularDetalhamento()" checked>
-            <span class="text-sm font-medium text-slate-700">Frete (6%)</span>
-          </label>
-        </div>
-        <div class="bg-orange-50 p-4 rounded-lg text-center">
-          <p class="text-slate-500 text-sm">Preço de Venda</p>
-          <p class="text-2xl font-bold text-orange-600" id="detalhe-preco-venda">${formatMoney(precoVendaInicial)}</p>
-          <p class="text-xs text-slate-500"><span id="detalhe-preco-m2">${formatMoney(precoM2Inicial)}</span> / m²</p>
-          <button onclick="enviarParaOrcamento()" class="mt-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs inline-flex items-center gap-1 whitespace-nowrap">
-            <i data-lucide="send" class="w-3 h-3"></i> Enviar para Orçamento
-          </button>
-        </div>
+        <div class="bg-slate-50 p-4 rounded-lg text-center"><p class="text-slate-500 text-sm">Custo Total</p><p class="text-2xl font-bold text-slate-800" id="detalhe-custo-total">${formatMoney(custoTotal)}</p></div>
+        <div class="bg-slate-50 p-4 rounded-lg text-center"><label class="text-slate-500 text-sm block">Margem de Lucro (%)</label><input type="number" id="detalhe-margem-lucro" value="40" min="0" max="200" step="0.1" class="w-24 text-center border rounded p-1 mt-1 mx-auto" onchange="recalcularDetalhamento()"></div>
+        <div class="bg-white border border-slate-200 p-4 rounded-lg text-center flex flex-col items-center justify-center"><label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="detalhe-frete-check" class="w-5 h-5 accent-orange-600" onchange="recalcularDetalhamento()" checked><span class="text-sm font-medium text-slate-700">Frete (6%)</span></label></div>
+        <div class="bg-orange-50 p-4 rounded-lg text-center"><p class="text-slate-500 text-sm">Preço de Venda</p><p class="text-2xl font-bold text-orange-600" id="detalhe-preco-venda">${formatMoney(precoVendaInicial)}</p><p class="text-xs text-slate-500"><span id="detalhe-preco-m2">${formatMoney(precoM2Inicial)}</span> / m²</p><button onclick="enviarParaOrcamento()" class="mt-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs inline-flex items-center gap-1 whitespace-nowrap"><i data-lucide="send" class="w-3 h-3"></i> Enviar para Orçamento</button></div>
       </div>
       <p class="text-xs text-slate-400 mt-2">* Ajuste a margem de lucro ou marque o frete para recalcular o preço de venda automaticamente.</p>
     </div>
