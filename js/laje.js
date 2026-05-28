@@ -723,23 +723,38 @@ async function gerarDetalhamento() {
 
   await carregarProdutosLajeSilencioso();
 
-  let totalArea = 0, totalEpsLinear = 0;
+  // Totais gerais
+  let totalArea = 0;
+  let areaLajota = 0;                   // área apenas das lajes com lajota
   const tiposEnchimento = new Set();
-  const vigotasPorAltura = {};   // { altura: [comprimentos...] }
+  const vigotasPorAltura = {};          // { altura: [comprimentos...] }
+  const epsLinearPorAltura = {};        // { altura: totalEpsLinear }
 
   itens.forEach(i => {
-    totalArea += Number(i.area || (i.vao_menor * i.vao_maior));
-    if (i.tipo_enchimento === 'EPS') totalEpsLinear += Number(i.metragem_eps);
+    const area = Number(i.area || (i.vao_menor * i.vao_maior));
+    totalArea += area;
     tiposEnchimento.add(i.tipo_enchimento);
+
+    // Área específica para lajota
+    if (i.tipo_enchimento === 'LAJOTA_CERAMICA') {
+      areaLajota += area;
+    }
+
+    // Vigotas por altura
     const altura = i.altura || 8;
     if (!vigotasPorAltura[altura]) vigotasPorAltura[altura] = [];
     for (let j = 0; j < Number(i.qtd_vigotas); j++) {
       vigotasPorAltura[altura].push(Number(i.tamanho_vigota));
     }
+
+    // EPS linear por altura
+    if (i.tipo_enchimento === 'EPS') {
+      if (!epsLinearPorAltura[altura]) epsLinearPorAltura[altura] = 0;
+      epsLinearPorAltura[altura] += Number(i.metragem_eps);
+    }
   });
 
-  const metrosLinearesTrelica = Object.values(vigotasPorAltura).flat().reduce((a, b) => a + b, 0);
-
+  // ---------- FUNÇÕES AUXILIARES ----------
   function custoProduto(nomePadrao, padrao = 0) {
     const p = LAJE.produtosList.find(x => x.descricao === nomePadrao);
     return p ? Number(p.custo_unitario) : padrao;
@@ -756,7 +771,7 @@ async function gerarDetalhamento() {
     custoTotal += vlrTotal;
   }
 
-  // ========== TRELIÇAS POR ALTURA ==========
+  // ==================== TRELIÇAS POR ALTURA ====================
   for (const [alturaStr, tamanhos] of Object.entries(vigotasPorAltura).sort((a,b) => b[0]-a[0])) {
     const altura = parseInt(alturaStr);
     const barra12m = obterConfig('comprimento_barra_trelica', 12.0);
@@ -782,16 +797,16 @@ async function gerarDetalhamento() {
     );
   }
 
-  // ========== ENCHIMENTO – EPS (mantido como antes, baseado na maior altura) ==========
-  if (tiposEnchimento.has('EPS')) {
-    const alturaModa = [...Object.keys(vigotasPorAltura)].sort((a,b) => b-a)[0] || 8;
-    const placasEps = Math.ceil(totalEpsLinear);
-    const epsNome = `EPS H${alturaModa} placa 50x100`;
+  // ==================== EPS (POR ALTURA) ====================
+  for (const [alturaStr, metros] of Object.entries(epsLinearPorAltura).sort((a,b) => b[0]-a[0])) {
+    const altura = parseInt(alturaStr);
+    const placasEps = Math.ceil(metros);
+    const epsNome = `EPS H${altura} placa 50x100`;
     const custoEpsPlaca = custoProduto(epsNome, 11.90);
     addLinha(
-      'EPS (isopor)',
+      `EPS H${altura}`,
       `${placasEps} placas`,
-      `${totalEpsLinear.toFixed(2)} m lineares (equivale a ${placasEps} placas de 1,00×0,50 m)`,
+      `${metros.toFixed(2)} m lineares (equivale a ${placasEps} placas de 1,00×0,50 m)`,
       custoEpsPlaca,
       placasEps * custoEpsPlaca
     );
@@ -799,16 +814,16 @@ async function gerarDetalhamento() {
     if (freteIsopor > 0) addLinha('Frete do isopor', '1 un', '', freteIsopor, freteIsopor);
   }
 
-  // ========== LAJOTA (mantido) ==========
-  if (tiposEnchimento.has('LAJOTA_CERAMICA')) {
-    const totalLajotas = Math.ceil(totalArea * 12);
+  // ==================== LAJOTA (SOMENTE ÁREA CORRESPONDENTE) ====================
+  if (tiposEnchimento.has('LAJOTA_CERAMICA') && areaLajota > 0) {
+    const totalLajotas = Math.ceil(areaLajota * 13);
     const custoLajota = custoProduto('Lajota Cerâmica', 1.7);
-    addLinha('Lajota', `${totalLajotas} peças`, '', custoLajota, totalLajotas * custoLajota);
+    addLinha('Lajota', `${totalLajotas} peças`, `Área com lajota: ${areaLajota.toFixed(2)} m²`, custoLajota, totalLajotas * custoLajota);
     const freteLajota = custoProduto('Frete Lajota', 50);
     addLinha('Frete da lajota', '1 un', '', freteLajota, freteLajota);
   }
 
-  // ========== CONCRETO (cálculo mantido, baseado na área total) ==========
+  // ==================== CONCRETO (COMUM A TODAS AS LAJES) ====================
   const espessuraCapeamento = 0.02;
   const larguraCapeamento = 0.12;
   const secaoCapeamento = larguraCapeamento * espessuraCapeamento;
@@ -826,7 +841,7 @@ async function gerarDetalhamento() {
   addLinha('Areia Grossa', `${areiaM3.toFixed(3)} m³`, `${latasAreia} latas (18 L)`, custoProduto('Areia Grossa', 200), areiaM3 * custoProduto('Areia Grossa', 200));
   addLinha('Brita 0', `${britaM3.toFixed(3)} m³`, `${latasBrita} latas (18 L)`, custoProduto('Brita 0', 200), britaM3 * custoProduto('Brita 0', 200));
 
-  // ========== SERVIÇOS GERAIS (mantidos) ==========
+  // ==================== SERVIÇOS GERAIS ====================
   addLinha('Disco de Corte', '1 un', '', custoProduto('Disco de Corte', 10), custoProduto('Disco de Corte', 10));
   addLinha('ART', '1 un', '', custoProduto('ART', 28), custoProduto('ART', 28));
   addLinha('Plotagem', '1 un', '', custoProduto('Plotagem de Projeto', 10), custoProduto('Plotagem de Projeto', 10));
@@ -912,7 +927,6 @@ async function gerarDetalhamento() {
   showLoading(false);
   lucide.createIcons();
 }
-
 
 
 
