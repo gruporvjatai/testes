@@ -68,9 +68,15 @@ function renderPDV() {
                         </div>
                         <div class="grid grid-cols-2 gap-2">
                             <select id="pos-payment" class="w-full p-2 border rounded text-sm bg-white">
-                                <option>Dinheiro</option><option>PIX</option><option>Cartão Crédito</option><option>Cartão Débito</option>
-                                <option>Boleto 5 dias</option><option>Boleto 10 dias</option><option>Boleto 15 dias</option>
-                                <option>PIX 7 dias</option><option>Carteira</option>
+                                <option>Dinheiro</option>
+                                <option>PIX</option>
+                                <option>Cartão Crédito</option>
+                                <option>Cartão Débito</option>
+                                <option>Boleto 5 dias</option>
+                                <option>Boleto 10 dias</option>
+                                <option>Boleto 15 dias</option>
+                                <option>PIX 7 dias</option>
+                                <option>Carteira</option>
                             </select>
                             <div class="flex rounded border bg-white overflow-hidden">
                                 <select id="pos-discount-type" class="bg-slate-100 text-xs px-1 border-r font-bold focus:outline-none" onchange="atualizarCarrinho()">
