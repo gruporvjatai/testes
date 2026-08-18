@@ -219,7 +219,17 @@
                                 <textarea id="pos-custom-address" rows="2" placeholder="Digite o endereço completo da obra / ponto de referência..." class="w-full p-2 border rounded-lg text-xs bg-white focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none resize-none shadow-inner"></textarea>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
-                                <select id="pos-payment" class="w-full p-2 border rounded text-sm bg-white"><option>Dinheiro</option><option>PIX</option><option>Cartão Crédito</option><option>Cartão Débito</option><option>Boleto 5 dias</option><option>Boleto 10 dias</option><option>Boleto 15 dias</option><option>PIX 7 dias</option><option>Carteira</option></select>
+                                <select id="pos-payment" class="w-full p-2 border rounded text-sm bg-white">
+                                  <option>Dinheiro</option>
+                                  <option>PIX</option>
+                                  <option>Cartão Crédito</option>
+                                  <option>Cartão Débito</option>
+                                  <option>Boleto 5 dias</option>
+                                  <option>Boleto 10 dias</option>
+                                  <option>Boleto 15 dias</option>
+                                  <option>PIX 7 dias</option>
+                                  <option>Carteira</option>
+                                </select>
                                 <div class="flex rounded border bg-white overflow-hidden"><select id="pos-discount-type" class="bg-slate-100 text-xs px-1 border-r font-bold focus:outline-none" onchange="renderCart()"><option value="%">%</option><option value="$">R$</option></select><input type="number" id="pos-discount" value="0" class="w-full p-2 text-sm focus:outline-none" placeholder="Desc." onchange="renderCart()"></div>
                             </div>
                         </div>
@@ -1113,7 +1123,17 @@
                 </div>
                 <div>
                     <label class="block text-sm font-bold text-slate-700 mb-1">Forma de Pagto</label>
-                    <select id="rec-method" class="w-full p-3 border rounded-xl"><option>Dinheiro</option><option>PIX</option><option>Cartão Crédito</option><option>Cartão Débito</option><option>Boleto 5 dias</option><option>Boleto 10 dias</option><option>Boleto 15 dias</option><option>PIX 7 dias</option></select>
+                    <select id="rec-method" class="w-full p-3 border rounded-xl">
+                      <option>Dinheiro</option>                      
+                      <option>PIX</option>
+                      <option>Cartão Crédito</option>
+                      <option>Cartão Débito</option>
+                      <option>Boleto 5 dias</option>
+                      <option>Boleto 10 dias</option>
+                      <option>Boleto 15 dias</option>
+                      <option>PIX 7 dias</option>
+                      <option>Carteira</option>
+                    </select>
                 </div>
                 <div>
                     <label class="block text-sm font-bold text-slate-700 mb-1">Data Vencimento</label>
