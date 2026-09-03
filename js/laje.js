@@ -2401,3 +2401,108 @@ async function duplicarOrcamentoLaje(id) {
   }
   showLoading(false);
 }
+
+// ==================== MODAL PEÇAS MANUAIS ====================
+function abrirModalPecasLaje() {
+    const container = document.getElementById('pecas-linha-container');
+    container.innerHTML = `
+        <div class="flex gap-2 items-center peca-linha">
+            <input type="number" step="0.01" placeholder="Tamanho (m)" class="w-1/2 p-2 border rounded-lg text-sm">
+            <input type="number" step="1" min="1" placeholder="Qtd" class="w-1/4 p-2 border rounded-lg text-sm">
+            <button onclick="removerLinhaPeca(this)" class="text-red-500 hover:text-red-700">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+        </div>
+    `;
+    document.getElementById('modal-pecas-laje').classList.remove('hidden');
+    lucide.createIcons();
+}
+
+function fecharModalPecasLaje() {
+    document.getElementById('modal-pecas-laje').classList.add('hidden');
+}
+
+function adicionarLinhaPeca() {
+    const container = document.getElementById('pecas-linha-container');
+    const nova = document.createElement('div');
+    nova.className = 'flex gap-2 items-center peca-linha';
+    nova.innerHTML = `
+        <input type="number" step="0.01" placeholder="Tamanho (m)" class="w-1/2 p-2 border rounded-lg text-sm">
+        <input type="number" step="1" min="1" placeholder="Qtd" class="w-1/4 p-2 border rounded-lg text-sm">
+        <button onclick="removerLinhaPeca(this)" class="text-red-500 hover:text-red-700">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+    `;
+    container.appendChild(nova);
+    lucide.createIcons();
+}
+
+function removerLinhaPeca(btn) {
+    const linha = btn.closest('.peca-linha');
+    const container = document.getElementById('pecas-linha-container');
+    if (container.children.length > 1) {
+        linha.remove();
+    } else {
+        showToast('Deixe pelo menos uma linha.', true);
+    }
+}
+
+function salvarPecasLaje() {
+    const linhas = document.querySelectorAll('#pecas-linha-container .peca-linha');
+    const pecas = [];
+    let totalArea = 0;
+    let totalValor = 0;
+    let erro = false;
+
+    // Usa os parâmetros atuais do formulário (tipo e altura) para os itens manuais
+    const tipo = document.getElementById('laje-tipo-enchimento').value;
+    const altura = document.getElementById('laje-altura').value;
+    const larguraViga = parseFloat(document.getElementById('laje-largura-viga').value) || 0;
+    const larguraUtil = tipo === 'EPS' ? obterConfig('inter_eixo_eps', 0.50) : obterConfig('inter_eixo_lajota_ceramica', 0.43);
+
+    linhas.forEach((linha, idx) => {
+        const inputTamanho = linha.querySelector('input[placeholder="Tamanho (m)"]');
+        const inputQtd = linha.querySelector('input[placeholder="Qtd"]');
+        const tamanho = parseFloat(inputTamanho.value);
+        const qtd = parseInt(inputQtd.value) || 0;
+
+        if (!tamanho || tamanho <= 0 || qtd <= 0) {
+            erro = true;
+            return;
+        }
+
+        const area = tamanho * qtd * larguraUtil;
+        const configKey = `preco_m2_laje_${tipo.toLowerCase()}_h${altura}`;
+        const precoM2 = obterConfig(configKey, 0);
+        const valor = area * precoM2;
+
+        totalArea += area;
+        totalValor += valor;
+
+        pecas.push({
+            nome: `Peça ${idx + 1}`,
+            vaoMenor: 0,
+            vaoMaior: 0,
+            tipo: tipo,
+            altura: parseInt(altura),
+            larguraViga: larguraViga,
+            qtdVigotas: qtd,
+            tamVigota: tamanho,
+            epsLinear: 0,
+            area: area,
+            valorEstimado: valor
+        });
+    });
+
+    if (erro) {
+        return showToast('Preencha todos os campos com valores válidos.', true);
+    }
+    if (pecas.length === 0) {
+        return showToast('Adicione pelo menos uma peça válida.', true);
+    }
+
+    pecas.forEach(p => LAJE.comodosTemp.push(p));
+    renderComodosTemp();
+    fecharModalPecasLaje();
+    showToast(`${pecas.length} peça(s) adicionada(s) ao orçamento.`);
+}
