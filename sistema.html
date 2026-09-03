@@ -629,6 +629,9 @@
         <button onclick="abrirModalComodo()" class="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold hover:bg-slate-700 flex items-center gap-2">
           <i data-lucide="plus"></i> Adicionar Cômodo
         </button>
+        <button onclick="abrirModalPecasLaje()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2">
+          <i data-lucide="package" class="w-4 h-4"></i> Inserir Peças
+        </button>
       </div>
     </div>
 
@@ -1330,6 +1333,45 @@
         </div>
     </div>
 </div>
+
+    <!-- MODAL INSERIR PEÇAS MANUAIS -->
+    <div id="modal-pecas-laje" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto p-6">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <i data-lucide="package" class="text-indigo-600"></i> Inserir Peças Manualmente
+          </h2>
+          <button onclick="fecharModalPecasLaje()" class="text-slate-400 hover:text-slate-600">
+            <i data-lucide="x" class="w-6 h-6"></i>
+          </button>
+        </div>
+        <p class="text-sm text-slate-500 mb-4">
+          Informe o tamanho (em metros) e a quantidade de cada tipo de peça. O sistema usará esses dados para o plano de corte, detalhamento e entregas.
+        </p>
+    
+        <div id="pecas-linha-container" class="space-y-2 mb-4">
+          <!-- Linha inicial -->
+          <div class="flex gap-2 items-center peca-linha">
+            <input type="number" step="0.01" placeholder="Tamanho (m)" class="w-1/2 p-2 border rounded-lg text-sm">
+            <input type="number" step="1" min="1" placeholder="Qtd" class="w-1/4 p-2 border rounded-lg text-sm">
+            <button onclick="removerLinhaPeca(this)" class="text-red-500 hover:text-red-700">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+    
+        <button onclick="adicionarLinhaPeca()" class="text-blue-600 hover:text-blue-800 text-sm font-bold flex items-center gap-1 mb-4">
+          <i data-lucide="plus" class="w-4 h-4"></i> Adicionar outra linha
+        </button>
+    
+        <div class="flex justify-end gap-2 border-t pt-4">
+          <button onclick="fecharModalPecasLaje()" class="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50">Cancelar</button>
+          <button onclick="salvarPecasLaje()" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-bold">Salvar Peças</button>
+        </div>
+      </div>
+    </div>
+
+    
 
     <script>
       const supabaseUrl = 'https://irbgmmoxiedhcbfkanmu.supabase.co';
