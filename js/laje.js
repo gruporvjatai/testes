@@ -2404,6 +2404,10 @@ async function duplicarOrcamentoLaje(id) {
 
 // ==================== MODAL PEÇAS MANUAIS ====================
 function abrirModalPecasLaje() {
+  // Sincroniza com os valores do formulário principal
+    document.getElementById('peca-tipo-enchimento').value = document.getElementById('laje-tipo-enchimento').value;
+    document.getElementById('peca-altura').value = document.getElementById('laje-altura').value;
+  
     const container = document.getElementById('pecas-linha-container');
     container.innerHTML = `
         <div class="flex gap-2 items-center peca-linha">
@@ -2454,9 +2458,9 @@ function salvarPecasLaje() {
     let totalValor = 0;
     let erro = false;
 
-    // Usa os parâmetros atuais do formulário (tipo e altura) para os itens manuais
-    const tipo = document.getElementById('laje-tipo-enchimento').value;
-    const altura = document.getElementById('laje-altura').value;
+    // Lê os valores do modal (não do formulário principal)
+    const tipo = document.getElementById('peca-tipo-enchimento').value;
+    const altura = document.getElementById('peca-altura').value;
     const larguraViga = parseFloat(document.getElementById('laje-largura-viga').value) || 0;
     const larguraUtil = tipo === 'EPS' ? obterConfig('inter_eixo_eps', 0.50) : obterConfig('inter_eixo_lajota_ceramica', 0.43);
 
